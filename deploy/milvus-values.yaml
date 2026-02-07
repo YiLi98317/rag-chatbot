@@ -1,0 +1,36 @@
+# Minimal single-node friendly values for local clusters.
+# Tune persistence as needed for your environment.
+
+cluster:
+  enabled: false
+
+standalone:
+  replicas: 1
+  # Critical for small local clusters: avoid pulling in Pulsar.
+  messageQueue: rocksmq
+
+etcd:
+  replicaCount: 1
+  persistence:
+    enabled: false
+
+minio:
+  mode: standalone
+  replicas: 1
+  persistence:
+    enabled: false
+
+pulsar:
+  enabled: false
+
+pulsarv3:
+  enabled: false
+
+rocksmq:
+  enabled: true
+
+proxy:
+  service:
+    type: ClusterIP
+    port: 19530
+

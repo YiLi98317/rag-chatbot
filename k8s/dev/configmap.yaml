@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-api-config
+data:
+  VECTOR_PROVIDER: "milvus"
+  # Local dev default: Milvus Lite (embedded) so you don't need Helm/Milvus in-cluster.
+  # This file path lives on a shared emptyDir mounted at /data in the Pod.
+  MILVUS_LITE_DB: "/data/milvus.db"
+  MILVUS_DB: "default"
+  MILVUS_COLLECTION: "chatbot_docs"
+
+  # Ollama runs as a sidecar in the same Pod, so use localhost.
+  OLLAMA_BASE_URL: "http://localhost:11434"
+  # Keep Ollama generation memory bounded on CPU.
+  OLLAMA_NUM_CTX: "2048"
+  OLLAMA_NUM_BATCH: "128"
+  # First inference on a big model can be slow on CPU.
+  OLLAMA_REQUEST_TIMEOUT_S: "600"
+
+  # Embeddings run locally in the API container (SentenceTransformers + HF).
+  EMBED_PROVIDER: "sentence_transformers"
+  # Keep local bootstrap fast/lightweight.
+  EMBED_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
+
+  # Chat runs via Ollama sidecar. Model is pre-pulled by initContainer.
+  CHAT_MODEL: "deepseek-r1"
+
+  TOP_K_DEFAULT: "10"
+  DEBUG_TRACES: "0"
+

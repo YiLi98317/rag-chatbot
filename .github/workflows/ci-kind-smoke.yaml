@@ -1,0 +1,75 @@
+name: ci-kind-smoke
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  k8s_smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: chatbot
+
+      - name: Build API image
+        run: |
+          docker build -t chatbot-api:local .
+
+      - name: Load API image into kind
+        run: |
+          kind load docker-image chatbot-api:local --name chatbot
+
+      - name: Install Milvus (standalone)
+        run: |
+          helm repo add milvus https://zilliztech.github.io/milvus-helm/
+          helm repo update
+          helm upgrade --install milvus milvus/milvus -f deploy/milvus-values.yaml
+          kubectl rollout status deploy/milvus-standalone --timeout=10m || true
+          kubectl get pods -A
+
+      - name: Deploy API manifests (with CI model overrides)
+        run: |
+          kubectl apply -f k8s/api/configmap.yaml
+          kubectl apply -f k8s/api/secret.yaml
+
+          # Keep CI lightweight: use small Ollama model + small embeddings model and avoid planner LLM calls.
+          kubectl patch configmap chatbot-api-config --type merge -p '{"data":{"CHAT_MODEL":"tinyllama","EMBED_MODEL":"sentence-transformers/all-MiniLM-L6-v2","ENABLE_QUERY_PLANNER":"false"}}'
+
+          kubectl apply -f k8s/api/bootstrap-job.yaml
+          kubectl wait --for=condition=complete job/chatbot-bootstrap --timeout=20m
+          kubectl logs job/chatbot-bootstrap
+
+          kubectl apply -f k8s/api/deployment.yaml
+          kubectl apply -f k8s/api/service.yaml
+
+          kubectl rollout status deploy/chatbot-api --timeout=20m
+          kubectl get pods
+
+      - name: Port-forward and smoke
+        run: |
+          kubectl port-forward svc/chatbot-api 8000:8000 >/tmp/pf.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8000/healthz && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/readyz
+          curl -fsS -H 'Content-Type: application/json' \
+            --data '{"question":"下单流程是什么？","top_k":5}' \
+            http://localhost:8000/v1/qa | python -c "import json,sys; obj=json.load(sys.stdin); assert 'answer' in obj and 'trace_id' in obj"
+

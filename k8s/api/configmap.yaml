@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chatbot-api-config
+data:
+  VECTOR_PROVIDER: "milvus"
+  MILVUS_URI: "http://milvus:19530"
+  MILVUS_DB: "default"
+  MILVUS_COLLECTION: "chatbot_docs"
+  # When running Ollama as a sidecar in the same Pod, use localhost.
+  OLLAMA_BASE_URL: "http://localhost:11434"
+  # Embeddings run locally in the API container (SentenceTransformers + HF).
+  EMBED_PROVIDER: "sentence_transformers"
+  EMBED_MODEL: "BAAI/bge-m3"
+  # Chat runs via Ollama sidecar (ensure model exists: `ollama pull deepseek-r1`).
+  CHAT_MODEL: "deepseek-r1"
+  TOP_K_DEFAULT: "10"
+  DEBUG_TRACES: "0"
+

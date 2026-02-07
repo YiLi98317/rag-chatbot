@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatbot-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chatbot-api
+  template:
+    metadata:
+      labels:
+        app: chatbot-api
+    spec:
+      initContainers:
+        - name: ollama-pull
+          image: ollama/ollama:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: chatbot-api-config
+          env:
+            - name: OLLAMA_HOST
+              value: "127.0.0.1:11434"
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              model="${CHAT_MODEL:-deepseek-r1}"
+              echo "ollama-pull: starting temporary server"
+              ollama serve >/tmp/ollama.log 2>&1 &
+              pid="$!"
+              echo "ollama-pull: waiting for server to be ready"
+              for i in $(seq 1 90); do
+                if ollama list >/dev/null 2>&1; then
+                  break
+                fi
+                sleep 1
+              done
+              echo "ollama-pull: pulling model=${model}"
+              ollama pull "${model}"
+              echo "ollama-pull: stopping server"
+              kill "${pid}"
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+      containers:
+        - name: api
+          image: chatbot-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: chatbot-api-config
+            - secretRef:
+                name: chatbot-api-secrets
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+        - name: ollama
+          image: ollama/ollama:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: ollama
+              containerPort: 11434
+          env:
+            - name: OLLAMA_HOST
+              value: "0.0.0.0:11434"
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+          readinessProbe:
+            tcpSocket:
+              port: 11434
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: 11434
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+      volumes:
+        - name: ollama-data
+          emptyDir: {}
+

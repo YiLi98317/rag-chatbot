@@ -1,0 +1,29 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+.git/
+.github/
+.cursor/
+
+# Local env/secrets
+.env
+
+# Local traces/logs/artifacts
+traces/
+logs/
+
+# Local databases / large artifacts
+milvus.db
+.milvus.db.lock
+*.sqlite
+*.sqlite3
+entity_fts.sqlite
+
+# OS/editor noise
+.DS_Store

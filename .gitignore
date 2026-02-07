@@ -1,0 +1,45 @@
+# Environment and secrets
+.env
+.env.*
+
+# Local data sources (kept out of git)
+data/
+
+# Virtual environments
+.venv/
+
+# Python caches and artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# OS/editor files
+.DS_Store
+.vscode/
+.idea/
+.cursor/
+
+# Logs
+*.log
+logs/
+
+# Local traces and runtime artifacts
+traces/
+
+# Local databases / large artifacts (generated)
+milvus.db
+.milvus.db.lock
+entity_fts.sqlite*
+*.sqlite
+*.sqlite3
+
+
