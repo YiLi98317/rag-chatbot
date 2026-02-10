@@ -2,13 +2,15 @@
 
 This document describes how to deploy the RAG chatbot API to Alibaba ECS using GitHub Actions.
 
+> **Note**: Throughout this document, `<your-ecs-ip>` is used as a placeholder for your actual ECS server IP address. Replace it with your real IP address when following the instructions. The IP address should be stored in the `ECS_HOST` GitHub secret, not hardcoded in this documentation.
+
 ## Quick Start - Next Steps
 
 Now that you can connect to your ECS server, follow these steps in order:
 
 ### Step 1: ✅ Connect to ECS (Done!)
 ```bash
-ssh root@47.110.33.91
+ssh root@<your-ecs-ip>
 ```
 
 ### Step 2: Install Docker and Docker Compose on ECS
@@ -37,7 +39,7 @@ Go to your GitHub repository: **Settings → Secrets and variables → Actions �
 
 **Minimum required secrets to get started:**
 
-1. **ECS_HOST** = `47.110.33.91`
+1. **ECS_HOST** = `<your-ecs-ip>` (e.g., `1.2.3.4` - your ECS server IP address)
 2. **ECS_USER** = `root`
 3. **ECS_PASSWORD** = `<your-root-password>` (the password you use to SSH)
 
@@ -89,12 +91,12 @@ This will trigger the GitHub Actions workflow which will:
 After the workflow completes (check GitHub Actions tab), verify the deployment:
 
 ```bash
-# From your local machine
-curl http://47.110.33.91/healthz
-curl http://47.110.33.91/readyz
+# From your local machine (replace <your-ecs-ip> with your actual ECS IP)
+curl http://<your-ecs-ip>/healthz
+curl http://<your-ecs-ip>/readyz
 
 # Or SSH to ECS and check
-ssh root@47.110.33.91
+ssh root@<your-ecs-ip>
 cd /opt/rag
 docker compose ps
 docker compose logs api
@@ -109,7 +111,7 @@ docker compose logs api
 SSH into your ECS instance:
 
 ```bash
-ssh root@47.110.33.91
+ssh root@<your-ecs-ip>
 ```
 
 #### Install Docker and Docker Compose
@@ -163,7 +165,7 @@ Navigate to your repository: **Settings → Secrets and variables → Actions �
 
 | Secret Name | Value | Description |
 |------------|-------|-------------|
-| `ECS_HOST` | `47.110.33.91` | ECS server IP address |
+| `ECS_HOST` | `<your-ecs-ip>` | ECS server IP address (e.g., `1.2.3.4`) |
 | `ECS_PORT` | `22` (or leave empty) | SSH port (default is 22, can be omitted) |
 | `ECS_USER` | `root` | SSH username (recommend switching to deploy user later) |
 | `ECS_PASSWORD` | `<your-root-password>` | SSH password (temporary, migrate to SSH key) |
@@ -221,8 +223,8 @@ All services are configured with:
 After deployment, verify the services:
 
 ```bash
-# SSH into ECS
-ssh root@47.110.33.91
+# SSH into ECS (replace <your-ecs-ip> with your actual ECS IP)
+ssh root@<your-ecs-ip>
 
 # Check service status
 cd /opt/rag
@@ -246,9 +248,10 @@ curl -X POST http://localhost/v1/qa \
 From outside the server:
 
 ```bash
-curl http://47.110.33.91/healthz
-curl http://47.110.33.91/readyz
-curl -X POST http://47.110.33.91/v1/qa \
+# Replace <your-ecs-ip> with your actual ECS IP address
+curl http://<your-ecs-ip>/healthz
+curl http://<your-ecs-ip>/readyz
+curl -X POST http://<your-ecs-ip>/v1/qa \
   -H "Content-Type: application/json" \
   -d '{"question":"hello"}'
 ```
@@ -266,7 +269,7 @@ ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/github_actions_deploy
 ### 2. Copy Public Key to ECS
 
 ```bash
-ssh-copy-id -i ~/.ssh/github_actions_deploy.pub root@47.110.33.91
+ssh-copy-id -i ~/.ssh/github_actions_deploy.pub root@<your-ecs-ip>
 ```
 
 ### 3. Update GitHub Secret

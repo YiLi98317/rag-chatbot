@@ -55,7 +55,19 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           password: ${{ secrets.ECS_PASSWORD }}
           source: "deploy/docker-compose.prod.yml"
-          target: "/opt/rag/docker-compose.yml"
+          target: "/opt/rag"
+
+      - name: Rename docker-compose file on ECS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          port: ${{ secrets.ECS_PORT || '22' }}
+          username: ${{ secrets.ECS_USER }}
+          password: ${{ secrets.ECS_PASSWORD }}
+          script: |
+            mkdir -p /opt/rag
+            mv /opt/rag/deploy/docker-compose.prod.yml /opt/rag/docker-compose.yml
+            rmdir /opt/rag/deploy 2>/dev/null || true
 
       - name: Generate .env file on ECS
         uses: appleboy/ssh-action@v1.0.3
@@ -103,6 +115,7 @@ jobs:
           port: ${{ secrets.ECS_PORT || '22' }}
           username: ${{ secrets.ECS_USER }}
           password: ${{ secrets.ECS_PASSWORD }}
+          envs: GHCR_TOKEN
           script: |
             cd /opt/rag
             # Login to GHCR on ECS (use ECS_GHCR_TOKEN if available, otherwise GITHUB_TOKEN)
