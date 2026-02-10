@@ -10,6 +10,8 @@ services:
       - ALLOW_NONE_AUTHENTICATION=yes
     command: >
       etcd
+      -name=etcd
+      -data-dir=/etcd
       -advertise-client-urls=http://etcd:2379
       -listen-client-urls=http://0.0.0.0:2379
       -listen-peer-urls=http://0.0.0.0:2380
