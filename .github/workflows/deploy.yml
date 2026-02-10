@@ -1,0 +1,143 @@
+name: deploy-ecs
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prepare docker-compose.yml with image reference
+        run: |
+          sed "s|ghcr.io/\${GITHUB_REPOSITORY:-owner/repo}:latest|ghcr.io/${{ github.repository }}:latest|g" deploy/docker-compose.yml > deploy/docker-compose.prod.yml
+
+      - name: Copy docker-compose.yml to ECS
+        uses: appleboy/scp-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          port: ${{ secrets.ECS_PORT || '22' }}
+          username: ${{ secrets.ECS_USER }}
+          password: ${{ secrets.ECS_PASSWORD }}
+          source: "deploy/docker-compose.prod.yml"
+          target: "/opt/rag/docker-compose.yml"
+
+      - name: Generate .env file on ECS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          port: ${{ secrets.ECS_PORT || '22' }}
+          username: ${{ secrets.ECS_USER }}
+          password: ${{ secrets.ECS_PASSWORD }}
+          script: |
+            mkdir -p /opt/rag
+            cat > /opt/rag/.env << ENVEOF
+            VECTOR_PROVIDER=${{ secrets.VECTOR_PROVIDER }}
+            MILVUS_URI=${{ secrets.MILVUS_URI }}
+            MILVUS_DB=${{ secrets.MILVUS_DB }}
+            MILVUS_COLLECTION=${{ secrets.MILVUS_COLLECTION }}
+            OLLAMA_BASE_URL=${{ secrets.OLLAMA_BASE_URL }}
+            EMBED_PROVIDER=${{ secrets.EMBED_PROVIDER }}
+            EMBED_MODEL=${{ secrets.EMBED_MODEL }}
+            CHAT_MODEL=${{ secrets.CHAT_MODEL }}
+            TOP_K_DEFAULT=${{ secrets.TOP_K_DEFAULT }}
+            DEBUG_TRACES=${{ secrets.DEBUG_TRACES }}
+            ENVEOF
+            # Apply defaults for empty values
+            sed -i 's/^VECTOR_PROVIDER=$/VECTOR_PROVIDER=milvus/' /opt/rag/.env
+            sed -i 's|^MILVUS_URI=$|MILVUS_URI=http://milvus:19530|' /opt/rag/.env
+            sed -i 's/^MILVUS_DB=$/MILVUS_DB=default/' /opt/rag/.env
+            sed -i 's/^MILVUS_COLLECTION=$/MILVUS_COLLECTION=chatbot_docs/' /opt/rag/.env
+            sed -i 's|^OLLAMA_BASE_URL=$|OLLAMA_BASE_URL=http://ollama:11434|' /opt/rag/.env
+            sed -i 's/^EMBED_PROVIDER=$/EMBED_PROVIDER=sentence_transformers/' /opt/rag/.env
+            sed -i 's|^EMBED_MODEL=$|EMBED_MODEL=BAAI/bge-m3|' /opt/rag/.env
+            sed -i 's/^CHAT_MODEL=$/CHAT_MODEL=deepseek-r1/' /opt/rag/.env
+            sed -i 's/^TOP_K_DEFAULT=$/TOP_K_DEFAULT=10/' /opt/rag/.env
+            sed -i 's/^DEBUG_TRACES=$/DEBUG_TRACES=0/' /opt/rag/.env
+            # Add Qdrant vars if provided
+            [ -n "${{ secrets.QDRANT_URL }}" ] && echo "QDRANT_URL=${{ secrets.QDRANT_URL }}" >> /opt/rag/.env
+            [ -n "${{ secrets.QDRANT_API_KEY }}" ] && echo "QDRANT_API_KEY=${{ secrets.QDRANT_API_KEY }}" >> /opt/rag/.env
+            chmod 600 /opt/rag/.env
+
+      - name: Deploy services on ECS
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          GHCR_TOKEN: ${{ secrets.ECS_GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          port: ${{ secrets.ECS_PORT || '22' }}
+          username: ${{ secrets.ECS_USER }}
+          password: ${{ secrets.ECS_PASSWORD }}
+          script: |
+            cd /opt/rag
+            # Login to GHCR on ECS (use ECS_GHCR_TOKEN if available, otherwise GITHUB_TOKEN)
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            # Pull latest images
+            docker compose pull api
+            # Start/update services
+            docker compose up -d
+            # Clean up old images
+            docker image prune -f
+            # Show service status
+            docker compose ps
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          port: ${{ secrets.ECS_PORT || '22' }}
+          username: ${{ secrets.ECS_USER }}
+          password: ${{ secrets.ECS_PASSWORD }}
+          script: |
+            echo "Waiting for services to be healthy..."
+            sleep 10
+            # Check API health
+            for i in {1..30}; do
+              if curl -f http://localhost/healthz > /dev/null 2>&1; then
+                echo "API is healthy"
+                break
+              fi
+              echo "Waiting for API... ($i/30)"
+              sleep 2
+            done
+            # Show logs if health check fails
+            if ! curl -f http://localhost/healthz > /dev/null 2>&1; then
+              echo "Health check failed, showing logs:"
+              docker compose -f /opt/rag/docker-compose.yml logs --tail=50
+              exit 1
+            fi
