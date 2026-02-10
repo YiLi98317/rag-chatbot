@@ -63,7 +63,7 @@ jobs:
                 -e DATA_DIR=/data \
                 -v \"${DATA_PATH}:/data:ro\" \
                 \"${IMAGE}\" \
-                python -m chatbot.cli.ingest ingest ${RECREATE}
+                python -m chatbot.cli.ingest ${RECREATE}
             " | tee -a /opt/rag/logs/ingest.log
 
             echo "Ingestion completed."
