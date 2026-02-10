@@ -18,4 +18,5 @@ einops
 numpy
 cryptography
 openpyxl
+pandas
 

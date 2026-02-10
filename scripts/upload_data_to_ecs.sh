@@ -11,7 +11,8 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
 fi
 
 # ====== CONFIG ======
-# Repo-local source: only data/target/* (not all of data/)
+# Repo-local source: only data/target/* (not all of data/).
+# Put company.xlsx and any .txt/.md here; reingest workflow runs chatbot.cli.ingest (handles .txt, .md, .xlsx).
 SRC_DIR="${REPO_ROOT}/data/target"
 # ECS destination directory (on server)
 DEST_DIR="/data/company_docs"

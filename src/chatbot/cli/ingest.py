@@ -84,10 +84,13 @@ def ingest(
 
         pts = []
         for text, vec, meta in zip(buffer_texts, vecs, buffer_metas):
-            src = str((meta or {}).get("source") or "")
-            chunk_id = int((meta or {}).get("chunk") or 0)
-            pid = stable_chunk_id(source=src, chunk_id=chunk_id, table=(meta or {}).get("table"))
-            pts.append(Point(id=pid, vector=list(vec), text=text, metadata=dict(meta or {})))
+            m = meta or {}
+            src = str(m.get("source") or "")
+            chunk_id = int(m.get("chunk") or 0)
+            table = m.get("table")
+            row_id = f"{m.get('sheet')}:{m.get('row')}" if ("sheet" in m and "row" in m) else None
+            pid = stable_chunk_id(source=src, chunk_id=chunk_id, table=table, row_id=row_id)
+            pts.append(Point(id=pid, vector=list(vec), text=text, metadata=dict(m)))
 
         store.upsert(collection_name, points=pts, batch_size=int(batch_size))
         n = len(buffer_texts)
