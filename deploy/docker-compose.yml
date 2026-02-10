@@ -19,8 +19,8 @@ services:
     volumes:
       - etcd_data:/etcd
     healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
-      interval: 30s
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+      interval: 10s
       timeout: 5s
       retries: 3
 
