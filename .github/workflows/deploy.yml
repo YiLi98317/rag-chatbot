@@ -121,16 +121,38 @@ jobs:
           envs: GHCR_TOKEN
           script: |
             cd /opt/rag
-            # Login to GHCR on ECS (use ECS_GHCR_TOKEN if available, otherwise GITHUB_TOKEN)
+            echo "=== Logging into GHCR ==="
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            # Pull latest images
-            docker compose pull api
-            # Start/update services
+            
+            echo ""
+            echo "=== Pulling latest API image ==="
+            docker compose pull api || echo "Warning: Failed to pull image, will use existing"
+            
+            echo ""
+            echo "=== Starting services ==="
             docker compose up -d
-            # Clean up old images
-            docker image prune -f
-            # Show service status
+            
+            echo ""
+            echo "=== Waiting for services to start ==="
+            sleep 10
+            
+            echo ""
+            echo "=== Service status ==="
             docker compose ps
+            
+            echo ""
+            echo "=== Checking API container ==="
+            if docker ps | grep -q rag_api; then
+              echo "✅ API container is running"
+              docker logs rag_api 2>&1 | tail -20
+            else
+              echo "⚠️  API container not found in running containers"
+              docker ps -a | grep rag_api || echo "API container not found at all"
+            fi
+            
+            echo ""
+            echo "=== Cleaning up old images ==="
+            docker image prune -f
 
       - name: Verify deployment
         uses: appleboy/ssh-action@v1.2.5
@@ -140,20 +162,66 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           password: ${{ secrets.ECS_PASSWORD }}
           script: |
-            echo "Waiting for services to be healthy..."
-            sleep 10
-            # Check API health
-            for i in {1..30}; do
-              if curl -f http://localhost/healthz > /dev/null 2>&1; then
-                echo "API is healthy"
-                break
-              fi
-              echo "Waiting for API... ($i/30)"
-              sleep 2
-            done
-            # Show logs if health check fails
-            if ! curl -f http://localhost/healthz > /dev/null 2>&1; then
-              echo "Health check failed, showing logs:"
-              docker compose -f /opt/rag/docker-compose.yml logs --tail=50
+            cd /opt/rag
+            echo "=== Checking service status ==="
+            docker compose ps
+            
+            echo ""
+            echo "=== Waiting for services to be healthy ==="
+            sleep 15
+            
+            echo ""
+            echo "=== Checking API container status ==="
+            if ! docker ps | grep -q rag_api; then
+              echo "ERROR: API container is not running!"
+              echo "All containers:"
+              docker ps -a
+              echo ""
+              echo "API container logs:"
+              docker logs rag_api 2>&1 | tail -100 || echo "Could not fetch logs"
               exit 1
             fi
+            
+            echo ""
+            echo "=== Checking if port 80 is listening ==="
+            netstat -tlnp | grep :80 || ss -tlnp | grep :80 || echo "Port 80 check unavailable"
+            
+            echo ""
+            echo "=== Checking API health endpoint ==="
+            # Check API health with more verbose output
+            for i in {1..40}; do
+              if curl -f -s http://localhost/healthz > /dev/null 2>&1; then
+                echo "✅ API health check passed!"
+                curl -s http://localhost/healthz | head -5
+                break
+              fi
+              if [ $i -eq 1 ]; then
+                echo "Attempting first health check..."
+                curl -v http://localhost/healthz 2>&1 | head -20 || true
+              fi
+              echo "Waiting for API... ($i/40)"
+              sleep 3
+            done
+            
+            echo ""
+            echo "=== Final health check ==="
+            if ! curl -f http://localhost/healthz > /dev/null 2>&1; then
+              echo "❌ Health check failed after all attempts"
+              echo ""
+              echo "=== Service status ==="
+              docker compose ps
+              echo ""
+              echo "=== API container logs (last 100 lines) ==="
+              docker logs rag_api 2>&1 | tail -100
+              echo ""
+              echo "=== All service logs (last 50 lines) ==="
+              docker compose logs --tail=50
+              echo ""
+              echo "=== Checking API container health ==="
+              docker inspect rag_api --format='{{.State.Status}} - {{.State.Health.Status}}' || true
+              exit 1
+            fi
+            
+            echo ""
+            echo "=== Deployment verification successful! ==="
+            docker compose ps
