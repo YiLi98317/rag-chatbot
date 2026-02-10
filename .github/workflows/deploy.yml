@@ -48,7 +48,7 @@ jobs:
           sed "s|ghcr.io/\${GITHUB_REPOSITORY:-owner/repo}:latest|ghcr.io/${{ github.repository }}:latest|g" deploy/docker-compose.yml > deploy/docker-compose.prod.yml
 
       - name: Copy docker-compose.yml to ECS
-        uses: appleboy/scp-action@v1.0.3
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.ECS_HOST }}
           port: ${{ secrets.ECS_PORT || '22' }}
@@ -58,7 +58,7 @@ jobs:
           target: "/opt/rag"
 
       - name: Rename docker-compose file on ECS
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.ECS_HOST }}
           port: ${{ secrets.ECS_PORT || '22' }}
@@ -70,7 +70,7 @@ jobs:
             rmdir /opt/rag/deploy 2>/dev/null || true
 
       - name: Generate .env file on ECS
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.ECS_HOST }}
           port: ${{ secrets.ECS_PORT || '22' }}
@@ -107,7 +107,7 @@ jobs:
             chmod 600 /opt/rag/.env
 
       - name: Deploy services on ECS
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         env:
           GHCR_TOKEN: ${{ secrets.ECS_GHCR_TOKEN || secrets.GITHUB_TOKEN }}
         with:
@@ -130,7 +130,7 @@ jobs:
             docker compose ps
 
       - name: Verify deployment
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.ECS_HOST }}
           port: ${{ secrets.ECS_PORT || '22' }}
