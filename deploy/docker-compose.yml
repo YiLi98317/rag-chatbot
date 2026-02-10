@@ -31,9 +31,6 @@ services:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
     command: server /minio_data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     volumes:
       - minio_data:/minio_data
     healthcheck:
@@ -54,9 +51,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    ports:
-      - "19530:19530"
-      - "9091:9091"
     volumes:
       - milvus_data:/var/lib/milvus
     healthcheck:
@@ -68,8 +62,6 @@ services:
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
-    ports:
-      - "11434:11434"
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
     volumes:
