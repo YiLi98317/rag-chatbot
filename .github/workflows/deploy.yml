@@ -121,33 +121,87 @@ jobs:
           envs: GHCR_TOKEN
           script: |
             cd /opt/rag
+            COMPOSE_FILE="/opt/rag/docker-compose.yml"
+            
+            echo "=== Verifying docker-compose file exists ==="
+            if [ ! -f "$COMPOSE_FILE" ]; then
+              echo "ERROR: docker-compose.yml not found at $COMPOSE_FILE"
+              ls -la /opt/rag/
+              exit 1
+            fi
+            echo "✅ Found docker-compose.yml"
+            
+            echo ""
             echo "=== Logging into GHCR ==="
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
             echo ""
             echo "=== Pulling latest API image ==="
-            docker compose pull api || echo "Warning: Failed to pull image, will use existing"
+            docker compose -f "$COMPOSE_FILE" pull api || echo "Warning: Failed to pull image, will use existing"
             
             echo ""
-            echo "=== Starting services ==="
-            docker compose up -d
+            echo "=== Starting infrastructure services first ==="
+            docker compose -f "$COMPOSE_FILE" up -d etcd minio
             
             echo ""
-            echo "=== Waiting for services to start ==="
-            sleep 10
+            echo "=== Waiting for etcd and minio to be healthy ==="
+            for i in {1..30}; do
+              if docker compose -f "$COMPOSE_FILE" ps etcd minio 2>/dev/null | grep -qE "(healthy|Up)"; then
+                echo "✅ Infrastructure services are up"
+                break
+              fi
+              echo "Waiting for infrastructure... ($i/30)"
+              sleep 2
+            done
+            
+            echo ""
+            echo "=== Starting Milvus and Ollama ==="
+            docker compose -f "$COMPOSE_FILE" up -d milvus ollama
+            
+            echo ""
+            echo "=== Waiting for Milvus and Ollama to be healthy ==="
+            for i in {1..60}; do
+              milvus_status=$(docker compose -f "$COMPOSE_FILE" ps milvus 2>/dev/null | grep -oE "(healthy|unhealthy|Up)" | head -1 || echo "unknown")
+              ollama_status=$(docker compose -f "$COMPOSE_FILE" ps ollama 2>/dev/null | grep -oE "(healthy|unhealthy|Up)" | head -1 || echo "unknown")
+              if [[ "$milvus_status" == *"healthy"* ]] && [[ "$ollama_status" == *"healthy"* ]]; then
+                echo "✅ Milvus and Ollama are healthy"
+                break
+              elif [[ "$milvus_status" == *"Up"* ]] && [[ "$ollama_status" == *"Up"* ]] && [ $i -gt 20 ]; then
+                echo "⚠️  Services are up but not yet healthy, proceeding..."
+                break
+              fi
+              echo "Waiting for Milvus ($milvus_status) and Ollama ($ollama_status)... ($i/60)"
+              sleep 3
+            done
+            
+            echo ""
+            echo "=== Starting API service ==="
+            docker compose -f "$COMPOSE_FILE" up -d api
+            
+            echo ""
+            echo "=== Waiting for API to start ==="
+            sleep 20
             
             echo ""
             echo "=== Service status ==="
-            docker compose ps
+            docker compose -f "$COMPOSE_FILE" ps
             
             echo ""
             echo "=== Checking API container ==="
             if docker ps | grep -q rag_api; then
               echo "✅ API container is running"
-              docker logs rag_api 2>&1 | tail -20
+              echo ""
+              echo "API logs (last 30 lines):"
+              docker logs rag_api 2>&1 | tail -30
             else
               echo "⚠️  API container not found in running containers"
               docker ps -a | grep rag_api || echo "API container not found at all"
+              echo ""
+              echo "All containers:"
+              docker ps -a
+              echo ""
+              echo "=== Checking docker-compose logs ==="
+              docker compose -f "$COMPOSE_FILE" logs api --tail=50
             fi
             
             echo ""
@@ -163,8 +217,9 @@ jobs:
           password: ${{ secrets.ECS_PASSWORD }}
           script: |
             cd /opt/rag
+            COMPOSE_FILE="/opt/rag/docker-compose.yml"
             echo "=== Checking service status ==="
-            docker compose ps
+            docker compose -f "$COMPOSE_FILE" ps
             
             echo ""
             echo "=== Waiting for services to be healthy ==="
@@ -184,7 +239,16 @@ jobs:
             
             echo ""
             echo "=== Checking if port 80 is listening ==="
-            netstat -tlnp | grep :80 || ss -tlnp | grep :80 || echo "Port 80 check unavailable"
+            netstat -tlnp 2>/dev/null | grep :80 || ss -tlnp 2>/dev/null | grep :80 || echo "Port 80 check unavailable (may need root)"
+            
+            echo ""
+            echo "=== Checking if API container is listening on port 8000 ==="
+            if docker exec rag_api curl -f http://localhost:8000/healthz > /dev/null 2>&1; then
+              echo "✅ API is responding inside container"
+              docker exec rag_api curl -s http://localhost:8000/healthz
+            else
+              echo "⚠️  API not responding inside container"
+            fi
             
             echo ""
             echo "=== Checking API health endpoint ==="
@@ -209,13 +273,13 @@ jobs:
               echo "❌ Health check failed after all attempts"
               echo ""
               echo "=== Service status ==="
-              docker compose ps
+              docker compose -f "$COMPOSE_FILE" ps
               echo ""
               echo "=== API container logs (last 100 lines) ==="
               docker logs rag_api 2>&1 | tail -100
               echo ""
               echo "=== All service logs (last 50 lines) ==="
-              docker compose logs --tail=50
+              docker compose -f /opt/rag/docker-compose.yml logs --tail=50
               echo ""
               echo "=== Checking API container health ==="
               docker inspect rag_api --format='{{.State.Status}} - {{.State.Health.Status}}' || true
@@ -224,4 +288,4 @@ jobs:
             
             echo ""
             echo "=== Deployment verification successful! ==="
-            docker compose ps
+            docker compose -f "$COMPOSE_FILE" ps
