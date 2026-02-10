@@ -2,8 +2,9 @@
 .env
 .env.*
 
-# Local data sources (kept out of git)
+# Local data (do not commit)
 data/
+/data/
 
 # Virtual environments
 .venv/
@@ -35,7 +36,7 @@ logs/
 # Local traces and runtime artifacts
 traces/
 
-# Local databases / large artifacts (generated)
+# Local databases and large artifacts
 milvus.db
 .milvus.db.lock
 entity_fts.sqlite*

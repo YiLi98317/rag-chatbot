@@ -244,6 +244,17 @@ jobs:
             done
 
             echo ""
+            echo "=== Pulling Ollama chat model ==="
+            CHAT_MODEL=$(grep '^CHAT_MODEL=' /opt/rag/.env 2>/dev/null | cut -d= -f2-)
+            CHAT_MODEL=${CHAT_MODEL:-deepseek-r1}
+            echo "Pulling model: ${CHAT_MODEL}"
+            if docker compose -f "$COMPOSE_FILE" exec -T ollama ollama pull "${CHAT_MODEL}" 2>&1; then
+              echo "✅ Ollama model ${CHAT_MODEL} pulled successfully"
+            else
+              echo "⚠️  Failed to pull Ollama model ${CHAT_MODEL}, API may fail if model is missing"
+            fi
+
+            echo ""
             echo "=== Starting API service ==="
             docker compose -f "$COMPOSE_FILE" up -d api
 

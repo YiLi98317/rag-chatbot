@@ -1,0 +1,69 @@
+# Manual workflow: run ingestion on ECS using data already on the server.
+# Uses same secrets as deploy (ECS_HOST, ECS_USER, ECS_PASSWORD, ECS_PORT).
+# No extra secrets required.
+name: Re-ingest ECS Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      data_path:
+        description: "ECS path containing docs (must already exist from upload script)"
+        required: true
+        default: "/data/company_docs"
+      mode:
+        description: "ingest mode (incremental = append/upsert; full = recreate collection)"
+        required: true
+        default: "incremental"
+        type: choice
+        options:
+          - incremental
+          - full
+
+jobs:
+  reingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and run ingest on ECS
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          username: ${{ secrets.ECS_USER }}
+          password: ${{ secrets.ECS_PASSWORD }}
+          script: |
+            set -euo pipefail
+            DATA_PATH="${{ inputs.data_path }}"
+            MODE="${{ inputs.mode }}"
+
+            REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+            IMAGE="ghcr.io/${REPO_LOWER}:latest"
+
+            echo "Validating data directory: ${DATA_PATH}"
+            test -d "${DATA_PATH}" || { echo "ERROR: Directory not found: ${DATA_PATH}"; exit 1; }
+
+            echo "Pulling latest image: ${IMAGE}"
+            docker pull "${IMAGE}" || { echo "WARNING: Pull failed, using existing image"; }
+
+            sudo mkdir -p /opt/rag/logs
+            sudo chown -R "${USER}:${USER}" /opt/rag/logs 2>/dev/null || true
+
+            RECREATE=""
+            if [[ "${MODE}" == "full" ]]; then
+              RECREATE="--recreate"
+            fi
+
+            # Use same network as API so we can reach Milvus/Ollama
+            NETWORK=$(docker inspect rag_api --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' 2>/dev/null || echo "rag_default")
+
+            echo "Running ingestion (mode=${MODE}) from ${DATA_PATH} on network ${NETWORK}"
+            LOCK="/tmp/rag_ingest.lock"
+            flock -n "${LOCK}" -c "
+              docker run --rm --network ${NETWORK} \
+                --env-file /opt/rag/.env \
+                -e DATA_DIR=/data \
+                -v \"${DATA_PATH}:/data:ro\" \
+                \"${IMAGE}\" \
+                python -m chatbot.cli.ingest ingest ${RECREATE}
+            " | tee -a /opt/rag/logs/ingest.log
+
+            echo "Ingestion completed."
