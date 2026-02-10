@@ -1,0 +1,32 @@
+name: test-build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (without push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ghcr.io/${{ github.repository }}:test-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test image
+        run: |
+          echo "✅ Build successful! Image built but not pushed."
+          echo "This workflow tests the build process without requiring package write permissions."
