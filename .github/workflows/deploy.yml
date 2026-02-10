@@ -30,6 +30,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
+          # Use repository directly - metadata action handles lowercase conversion
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch
@@ -48,7 +49,15 @@ jobs:
 
       - name: Prepare docker-compose.yml with image reference
         run: |
-          sed "s|ghcr.io/\${GITHUB_REPOSITORY:-owner/repo}:latest|ghcr.io/${{ github.repository }}:latest|g" deploy/docker-compose.yml > deploy/docker-compose.prod.yml
+          # Convert repository to lowercase (Docker requirement)
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "Repository (lowercase): ${REPO_LOWER}"
+          echo "Image will be: ghcr.io/${REPO_LOWER}:latest"
+          # Replace the image reference in docker-compose.yml
+          sed "s|ghcr.io/\${GITHUB_REPOSITORY:-owner/repo}:latest|ghcr.io/${REPO_LOWER}:latest|g" deploy/docker-compose.yml > deploy/docker-compose.prod.yml
+          # Verify the replacement worked
+          echo "Verifying replacement:"
+          grep "image:" deploy/docker-compose.prod.yml | grep "api" -A 1 || true
 
       - name: Copy docker-compose.yml to ECS
         uses: appleboy/scp-action@v1.0.0
@@ -137,10 +146,48 @@ jobs:
             
             echo ""
             echo "=== Pulling latest API image ==="
-            docker compose -f "$COMPOSE_FILE" pull api || echo "Warning: Failed to pull image, will use existing"
+            # Convert repository to lowercase for image pull (Docker requirement)
+            REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+            API_IMAGE="ghcr.io/${REPO_LOWER}:latest"
+            echo "Pulling ${API_IMAGE}..."
+            # Verify the image name in docker-compose matches
+            COMPOSE_IMAGE=$(grep "image:" "$COMPOSE_FILE" | grep "api" -A 1 | grep "image:" | sed 's/.*image: *//' | head -1)
+            echo "Docker-compose expects image: ${COMPOSE_IMAGE}"
+            # Try to pull with retries
+            for retry in {1..3}; do
+              if docker pull "${API_IMAGE}" 2>&1; then
+                echo "✅ API image pulled successfully"
+                break
+              else
+                if [ $retry -eq 3 ]; then
+                  echo "⚠️  Failed to pull API image after 3 attempts, will use existing if available"
+                else
+                  echo "Retrying API image pull... (attempt $retry/3)"
+                  sleep 5
+                fi
+              fi
+            done
             
             echo ""
             echo "=== Starting infrastructure services first ==="
+            echo "Pulling infrastructure images with retries..."
+            for service in etcd minio; do
+              echo "Pulling ${service}..."
+              for retry in {1..3}; do
+                if docker compose -f "$COMPOSE_FILE" pull "${service}" 2>&1; then
+                  echo "✅ ${service} pulled successfully"
+                  break
+                else
+                  if [ $retry -eq 3 ]; then
+                    echo "⚠️  Failed to pull ${service} after 3 attempts, continuing..."
+                  else
+                    echo "Retrying ${service} pull... (attempt $retry/3)"
+                    sleep 5
+                  fi
+                fi
+              done
+            done
+            
             docker compose -f "$COMPOSE_FILE" up -d etcd minio
             
             echo ""
@@ -156,6 +203,24 @@ jobs:
             
             echo ""
             echo "=== Starting Milvus and Ollama ==="
+            echo "Pulling Milvus and Ollama images with retries..."
+            for service in milvus ollama; do
+              echo "Pulling ${service}..."
+              for retry in {1..3}; do
+                if docker compose -f "$COMPOSE_FILE" pull "${service}" 2>&1; then
+                  echo "✅ ${service} pulled successfully"
+                  break
+                else
+                  if [ $retry -eq 3 ]; then
+                    echo "⚠️  Failed to pull ${service} after 3 attempts, continuing..."
+                  else
+                    echo "Retrying ${service} pull... (attempt $retry/3)"
+                    sleep 5
+                  fi
+                fi
+              done
+            done
+            
             docker compose -f "$COMPOSE_FILE" up -d milvus ollama
             
             echo ""
