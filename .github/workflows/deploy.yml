@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -131,7 +135,7 @@ jobs:
           script: |
             cd /opt/rag
             COMPOSE_FILE="/opt/rag/docker-compose.yml"
-            
+
             echo "=== Verifying docker-compose file exists ==="
             if [ ! -f "$COMPOSE_FILE" ]; then
               echo "ERROR: docker-compose.yml not found at $COMPOSE_FILE"
@@ -139,11 +143,11 @@ jobs:
               exit 1
             fi
             echo "✅ Found docker-compose.yml"
-            
+
             echo ""
             echo "=== Logging into GHCR ==="
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            
+
             echo ""
             echo "=== Pulling latest API image ==="
             # Convert repository to lowercase for image pull (Docker requirement)
@@ -167,7 +171,7 @@ jobs:
                 fi
               fi
             done
-            
+
             echo ""
             echo "=== Starting infrastructure services first ==="
             echo "Pulling infrastructure images with retries..."
@@ -187,9 +191,9 @@ jobs:
                 fi
               done
             done
-            
+
             docker compose -f "$COMPOSE_FILE" up -d etcd minio
-            
+
             echo ""
             echo "=== Waiting for etcd and minio to be healthy ==="
             for i in {1..30}; do
@@ -200,7 +204,7 @@ jobs:
               echo "Waiting for infrastructure... ($i/30)"
               sleep 2
             done
-            
+
             echo ""
             echo "=== Starting Milvus and Ollama ==="
             echo "Pulling Milvus and Ollama images with retries..."
@@ -220,9 +224,9 @@ jobs:
                 fi
               done
             done
-            
+
             docker compose -f "$COMPOSE_FILE" up -d milvus ollama
-            
+
             echo ""
             echo "=== Waiting for Milvus and Ollama to be healthy ==="
             for i in {1..60}; do
@@ -238,19 +242,19 @@ jobs:
               echo "Waiting for Milvus ($milvus_status) and Ollama ($ollama_status)... ($i/60)"
               sleep 3
             done
-            
+
             echo ""
             echo "=== Starting API service ==="
             docker compose -f "$COMPOSE_FILE" up -d api
-            
+
             echo ""
             echo "=== Waiting for API to start ==="
             sleep 20
-            
+
             echo ""
             echo "=== Service status ==="
             docker compose -f "$COMPOSE_FILE" ps
-            
+
             echo ""
             echo "=== Checking API container ==="
             if docker ps | grep -q rag_api; then
@@ -268,7 +272,7 @@ jobs:
               echo "=== Checking docker-compose logs ==="
               docker compose -f "$COMPOSE_FILE" logs api --tail=50
             fi
-            
+
             echo ""
             echo "=== Cleaning up old images ==="
             docker image prune -f
@@ -285,11 +289,11 @@ jobs:
             COMPOSE_FILE="/opt/rag/docker-compose.yml"
             echo "=== Checking service status ==="
             docker compose -f "$COMPOSE_FILE" ps
-            
+
             echo ""
             echo "=== Waiting for services to be healthy ==="
             sleep 15
-            
+
             echo ""
             echo "=== Checking API container status ==="
             if ! docker ps | grep -q rag_api; then
@@ -301,11 +305,11 @@ jobs:
               docker logs rag_api 2>&1 | tail -100 || echo "Could not fetch logs"
               exit 1
             fi
-            
+
             echo ""
             echo "=== Checking if port 80 is listening ==="
             netstat -tlnp 2>/dev/null | grep :80 || ss -tlnp 2>/dev/null | grep :80 || echo "Port 80 check unavailable (may need root)"
-            
+
             echo ""
             echo "=== Checking if API container is listening on port 8000 ==="
             if docker exec rag_api curl -f http://localhost:8000/healthz > /dev/null 2>&1; then
@@ -314,7 +318,7 @@ jobs:
             else
               echo "⚠️  API not responding inside container"
             fi
-            
+
             echo ""
             echo "=== Checking API health endpoint ==="
             # Check API health with more verbose output
@@ -331,7 +335,7 @@ jobs:
               echo "Waiting for API... ($i/40)"
               sleep 3
             done
-            
+
             echo ""
             echo "=== Final health check ==="
             if ! curl -f http://localhost/healthz > /dev/null 2>&1; then
@@ -350,7 +354,7 @@ jobs:
               docker inspect rag_api --format='{{.State.Status}} - {{.State.Health.Status}}' || true
               exit 1
             fi
-            
+
             echo ""
             echo "=== Deployment verification successful! ==="
             docker compose -f "$COMPOSE_FILE" ps
