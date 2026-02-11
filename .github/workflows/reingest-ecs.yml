@@ -67,6 +67,8 @@ jobs:
               docker run --rm --network ${NETWORK} \
                 --env-file /opt/rag/.env \
                 -e DATA_DIR=/data \
+                -e MILVUS_URI=http://milvus:19530 \
+                -e OLLAMA_BASE_URL=http://ollama:11434 \
                 -v \"${DATA_PATH}:/data:ro\" \
                 \"${IMAGE}\" \
                 python -m chatbot.cli.ingest ${RECREATE}
