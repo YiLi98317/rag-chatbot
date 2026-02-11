@@ -87,6 +87,11 @@ services:
       - "80:8000"
     env_file:
       - .env
+    # Use Milvus server in compose (override .env so API matches ingest; unset Lite so uri is used)
+    environment:
+      - MILVUS_URI=http://milvus:19530
+      - MILVUS_LITE_DB=
+      - OLLAMA_BASE_URL=http://ollama:11434
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 30s

@@ -75,3 +75,25 @@ jobs:
             " | tee -a /opt/rag/logs/ingest.log
 
             echo "Ingestion completed."
+
+            # After full recreate, restart API so it reconnects to Milvus and /readyz passes.
+            if [[ "${MODE}" == "full" ]]; then
+              echo "Restarting API container so readyz sees the new collection..."
+              docker restart rag_api || true
+              echo "Waiting for API to be back..."
+              sleep 10
+              READYZ_OK=false
+              for i in 1 2 3 4 5 6 7 8 9 10; do
+                if docker exec rag_api curl -sf http://localhost:8000/readyz > /dev/null 2>&1; then
+                  echo "Readyz OK after restart."
+                  READYZ_OK=true
+                  break
+                fi
+                echo "Waiting for readyz... ($i/10)"
+                sleep 3
+              done
+              if [[ "${READYZ_OK}" != "true" ]]; then
+                echo "WARNING: readyz did not pass after restart. Check API logs and Milvus."
+                docker logs rag_api 2>&1 | tail -30
+              fi
+            fi
