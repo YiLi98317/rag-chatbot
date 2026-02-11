@@ -25,6 +25,12 @@ def _normalize_input(text: str) -> str:
 
 @lru_cache(maxsize=2)
 def _get_model(model_name: str):
+    # When EMBED_MODEL_LOCAL_PATH is set and exists, load from that path (offline; no Hub access).
+    load_path = os.getenv("EMBED_MODEL_LOCAL_PATH", "").strip()
+    if load_path and os.path.exists(load_path):
+        from sentence_transformers import SentenceTransformer  # type: ignore
+
+        return SentenceTransformer(load_path)
     # Lazy import so environments without these deps can still run in Ollama mode.
     # Try to disable any remaining progress/logging in HF stack.
     try:
