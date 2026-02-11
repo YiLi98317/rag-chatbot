@@ -42,7 +42,8 @@ echo "  Target: ${ECS_USER}@${ECS_HOST}:${DEST_DIR}/"
 # Ensure dest dir exists on ECS
 ssh -p "$ECS_PORT" $SSH_KEY_ARG "${ECS_USER}@${ECS_HOST}" "sudo mkdir -p '${DEST_DIR}' && sudo chown -R ${ECS_USER}:${ECS_USER} '${DEST_DIR}'"
 
-# Upload via tar over SSH (rsync not required on server)
-tar cf - -C "${SRC_DIR}" . | ssh -p "$ECS_PORT" $SSH_KEY_ARG "${ECS_USER}@${ECS_HOST}" "rm -rf ${DEST_DIR}/* ${DEST_DIR}/.[!.]* 2>/dev/null; mkdir -p ${DEST_DIR} && tar xf - -C ${DEST_DIR}"
+# Upload via tar over SSH (rsync not required on server).
+# COPYFILE_DISABLE=1 (macOS) prevents ._* resource-fork files from being included in the archive.
+COPYFILE_DISABLE=1 tar cf - -C "${SRC_DIR}" . | ssh -p "$ECS_PORT" $SSH_KEY_ARG "${ECS_USER}@${ECS_HOST}" "rm -rf ${DEST_DIR}/* ${DEST_DIR}/.[!.]* 2>/dev/null; mkdir -p ${DEST_DIR} && tar xf - -C ${DEST_DIR}"
 
 echo "Done. Remote data now at: ${DEST_DIR}/"

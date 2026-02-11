@@ -21,7 +21,7 @@ def ingest(
     chunk_overlap: int = typer.Option(
         150, "--chunk-overlap", help="Characters overlap between chunks"
     ),
-    model: str = typer.Option("nomic-embed-text", "--model", "-m", help="Ollama embedding model"),
+    model: str = typer.Option(None, "--model", "-m", help="Embedding model (defaults to EMBED_MODEL from env)"),
     embed_batch_size: int = typer.Option(
         32, "--embed-batch-size", help="Embedding batch size (default: 32)"
     ),
@@ -34,6 +34,7 @@ def ingest(
     settings = get_settings()
     collection_name = collection or settings.default_collection
     data_dir = settings.data_dir
+    embed_model = model or settings.embed_model
     rprint(f"[bold]Ingesting from[/bold] {data_dir} into collection [bold]{collection_name}[/bold]")
 
     # Load and chunk documents
@@ -61,7 +62,7 @@ def ingest(
 
     # Stream docs -> embed -> upsert so long ingests show progress and avoid huge memory spikes.
     total = len(docs)
-    rprint(f"Embedding {total} chunks with model: {model} (provider={settings.embed_provider})")
+    rprint(f"Embedding {total} chunks with model: {embed_model} (provider={settings.embed_provider})")
 
     created = False
     buffer_texts = []
@@ -74,7 +75,7 @@ def ingest(
         vecs = embed_texts(
             buffer_texts,
             provider=settings.embed_provider,
-            model=model,
+            model=embed_model,
             ollama_base_url=settings.ollama_base_url,
             batch_size=int(embed_batch_size),
         )
