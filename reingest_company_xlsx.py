@@ -5,6 +5,7 @@ import argparse
 import os
 import sys
 import time
+import importlib.util
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -50,7 +51,7 @@ def main() -> None:
     parser.add_argument(
         "--xlsx",
         default="data/target/company.xlsx",
-        help="Path to .xlsx file (default: data/target/company.xlsx)",
+        help="Path to .xlsx or .xls file (default: data/target/company.xlsx)",
     )
     parser.add_argument("--sheet", default=None, help="Optional sheet name (default: all sheets)")
     parser.add_argument("--collection", default=None, help="Qdrant collection (default: QDRANT_COLLECTION/.env)")
@@ -66,17 +67,20 @@ def main() -> None:
     collection = args.collection or settings.default_collection
     embed_model = args.embed_model or os.getenv("EMBED_MODEL") or settings.embed_model
 
-    xlsx_path = PROJECT_ROOT / args.xlsx
-    if not xlsx_path.exists():
-        raise SystemExit(f"XLSX not found: {xlsx_path}")
+    excel_path = (PROJECT_ROOT / args.xlsx).resolve()
+    if not excel_path.exists():
+        raise SystemExit(f"Excel file not found: {excel_path}")
+    suffix = excel_path.suffix.lower()
+    if suffix not in {".xlsx", ".xls"}:
+        raise SystemExit(f"Unsupported file type: {suffix} (expected .xlsx or .xls)")
 
     zh_chunk_size = int(os.getenv("ZH_CHUNK_SIZE", "1200"))
     zh_chunk_overlap = int(os.getenv("ZH_CHUNK_OVERLAP", "150"))
     chunk_size = int(args.chunk_size) if args.chunk_size else zh_chunk_size
     chunk_overlap = int(args.chunk_overlap) if args.chunk_overlap else zh_chunk_overlap
 
-    print("Re-ingesting Company XLSX")
-    print(f"- xlsx: {xlsx_path}")
+    print("Re-ingesting Company Excel")
+    print(f"- excel: {excel_path}")
     print(f"- sheet: {args.sheet or '(all)'}")
     print(f"- collection: {collection}")
     print(f"- embed_provider: {settings.embed_provider}")
@@ -86,7 +90,19 @@ def main() -> None:
 
     store = get_vector_store(settings)
 
-    xl = pd.ExcelFile(xlsx_path)
+    engine: Optional[str] = None
+    if suffix == ".xls":
+        engine = "xlrd"
+        if importlib.util.find_spec("xlrd") is None:
+            raise SystemExit(
+                "Reading .xls requires the 'xlrd' package. "
+                "Install it with: python -m pip install xlrd"
+            )
+    elif suffix == ".xlsx":
+        # pandas will usually pick openpyxl, but be explicit for clearer errors.
+        engine = "openpyxl"
+
+    xl = pd.ExcelFile(excel_path, engine=engine)
     sheet_names: Sequence[str]
     if args.sheet:
         sheet_names = [args.sheet]
@@ -150,8 +166,8 @@ def main() -> None:
                 buffer_texts.append(chunk)
                 buffer_metas.append(
                     {
-                        "source": str(xlsx_path),
-                        "source_type": "xlsx",
+                        "source": str(excel_path),
+                        "source_type": suffix.lstrip("."),
                         "table": "Company",
                         "sheet": sheet,
                         "row": i,

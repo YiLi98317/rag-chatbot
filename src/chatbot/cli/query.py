@@ -5,10 +5,10 @@ from rich import print as rprint
 
 from dataclasses import replace
 from chatbot.config import get_settings
-from chatbot.rag.pipeline import rag_answer, build_prompt
+from chatbot.rag.pipeline import rag_answer, build_prompt, format_debug_fields
 from chatbot.vectorstore import get_vector_store
 from chatbot.retrieval.retriever import retrieve_top_k
-from chatbot.llm.ollama_chat import generate
+from chatbot.llm.client import generate as llm_generate
 
 app = typer.Typer(add_completion=False)
 
@@ -32,7 +32,14 @@ def query(
     settings = get_settings()
     # Default models to settings (respects .env)
     embed_model = embed_model or settings.embed_model
-    chat_model = chat_model or settings.chat_model
+    if chat_model:
+        chat = chat_model
+    else:
+        provider = (getattr(settings, "llm_provider", "deepseek") or "deepseek").strip().lower()
+        if provider in {"deepseek", "api"}:
+            chat = getattr(settings, "model_name", "deepseek-chat")
+        else:
+            chat = getattr(settings, "chat_model", "llama3.1")
     if collection:
         # Override default collection at runtime
         settings = replace(settings, default_collection=collection)
@@ -65,16 +72,19 @@ def query(
             rprint(f"[dim]{idx}.[/dim] score={score:.4f} {table} {title}".rstrip())
             if text_preview:
                 rprint(f"[dim]    {text_preview}[/dim]")
-        prompt_text = build_prompt(question, contexts, debug=True)
-        rprint(f"[dim]Prompt length: chars={len(prompt_text)}[/dim]")
-        answer = generate(prompt=prompt_text, model=chat_model, base_url=settings.ollama_base_url)
+        prompt_text_answer = build_prompt(question, contexts, debug=False)
+        prompt_text_debug = build_prompt(question, contexts, debug=True)
+        rprint(f"[dim]Prompt length: chars={len(prompt_text_debug)}[/dim]")
+        actual = llm_generate(prompt_text_answer, settings=settings, purpose="answer", model_override=chat)
+        dbg = llm_generate(prompt_text_debug, settings=settings, purpose="answer", model_override=chat)
+        answer = format_debug_fields(actual_answer=actual, debug_text=dbg)
     else:
         answer = rag_answer(
             store=store,
             settings=settings,
             question=question,
             embed_model=embed_model,
-            chat_model=chat_model,
+            chat_model=chat,
             top_k=top_k,
         )
     rprint("\n[bold green]Answer[/bold green]:")

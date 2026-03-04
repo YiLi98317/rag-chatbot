@@ -16,6 +16,17 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
+# Ensure torch is loaded and transformers sees it so that transformers.integrations.accelerate
+# imports torch.nn (used in type hints). Otherwise is_torch_available() can be False (e.g. torch < 2.4)
+# and the accelerate module never defines nn -> NameError at annotation time.
+try:
+    import torch  # noqa: F401
+    import torch.nn  # noqa: F401
+    import transformers.utils.import_utils as _tf_import_utils
+    _tf_import_utils.is_torch_available = lambda: True
+except Exception:
+    pass
+
 
 def _normalize_input(text: str) -> str:
     s = unicodedata.normalize("NFKC", text or "")

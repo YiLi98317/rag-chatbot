@@ -29,6 +29,18 @@ class Settings:
     embed_provider: str
     embed_model: str
     chat_model: str
+    # LLM API (DeepSeek / OpenAI-compatible)
+    llm_provider: str  # "ollama" | "deepseek"
+    api_key: Optional[str]
+    api_base_url: Optional[str]
+    model_name: str
+    llm_temperature: float
+    llm_max_tokens: Optional[int]
+    llm_request_timeout_s: int
+    llm_planner_temperature: float
+    llm_planner_max_tokens: int
+    llm_planner_request_timeout_s: int
+    answer_persona: str  # "none" | "phone_mom"
 
     # Retrieval defaults
     default_collection: str
@@ -66,6 +78,14 @@ def _int_env(name: str, default: str) -> int:
         return int(v)
     except Exception:
         return int(default)
+
+
+def _float_env(name: str, default: str) -> float:
+    v = (os.getenv(name, default) or default).strip()
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
 
 
 def get_settings() -> Settings:
@@ -114,6 +134,15 @@ def get_settings() -> Settings:
 
     # Determine project root (two levels up from this file: src/chatbot/)
     project_root = Path(__file__).resolve().parents[2]
+
+    # If MILVUS_LITE_DB is a relative path (e.g. ./milvus.db), resolve it against the repo root
+    # so it works even when the process is launched from a different cwd.
+    if milvus_lite_db:
+        p = Path(milvus_lite_db).expanduser()
+        if not p.is_absolute():
+            milvus_lite_db = str((project_root / p).resolve())
+        else:
+            milvus_lite_db = str(p)
     default_data_dir = str(project_root / "data")
     data_dir = os.getenv("DATA_DIR", default_data_dir)
 
@@ -140,6 +169,39 @@ def get_settings() -> Settings:
         embed_provider = "ollama"
     embed_model = os.getenv("EMBED_MODEL", "nomic-embed-text")
     chat_model = os.getenv("CHAT_MODEL", "llama3.1")
+
+    # LLM provider selection: default to DeepSeek API for both answer and planner.
+    # Set LLM_PROVIDER=ollama to use local Ollama instead.
+    api_key = (os.getenv("API_KEY") or "").strip() or None
+    api_base_url = (os.getenv("API_BASE_URL") or "").strip() or None
+    model_name = (os.getenv("MODEL_NAME", "deepseek-chat") or "deepseek-chat").strip() or "deepseek-chat"
+    llm_provider_raw = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+    if llm_provider_raw:
+        llm_provider = llm_provider_raw
+    else:
+        llm_provider = "deepseek"
+    if llm_provider in {"api", "deepseek-api", "deepseek_api"}:
+        llm_provider = "deepseek"
+    if llm_provider not in {"ollama", "deepseek"}:
+        llm_provider = "deepseek"
+
+    llm_temperature = _float_env("LLM_TEMPERATURE", "0.3")
+    llm_request_timeout_s = _int_env("LLM_REQUEST_TIMEOUT_S", "120")
+    llm_max_tokens: Optional[int] = None
+    raw_max_tokens = (os.getenv("LLM_MAX_TOKENS") or "").strip()
+    if raw_max_tokens:
+        try:
+            llm_max_tokens = int(raw_max_tokens)
+        except Exception:
+            llm_max_tokens = None
+
+    llm_planner_temperature = _float_env("LLM_PLANNER_TEMPERATURE", "0.1")
+    llm_planner_max_tokens = _int_env("LLM_PLANNER_MAX_TOKENS", "256")
+    llm_planner_request_timeout_s = _int_env("LLM_PLANNER_REQUEST_TIMEOUT_S", "60")
+
+    answer_persona = (os.getenv("ANSWER_PERSONA", "phone_mom") or "phone_mom").strip().lower()
+    if answer_persona not in {"none", "phone_mom"}:
+        answer_persona = "phone_mom"
 
     enable_query_planner = _bool_env("ENABLE_QUERY_PLANNER", "true")
     enable_legacy_trailing_trim = _bool_env("ENABLE_LEGACY_TRAILING_TRIM", "false")
@@ -176,6 +238,17 @@ def get_settings() -> Settings:
         embed_provider=embed_provider,
         embed_model=embed_model,
         chat_model=chat_model,
+        llm_provider=llm_provider,
+        api_key=api_key,
+        api_base_url=api_base_url,
+        model_name=model_name,
+        llm_temperature=llm_temperature,
+        llm_max_tokens=llm_max_tokens,
+        llm_request_timeout_s=llm_request_timeout_s,
+        llm_planner_temperature=llm_planner_temperature,
+        llm_planner_max_tokens=llm_planner_max_tokens,
+        llm_planner_request_timeout_s=llm_planner_request_timeout_s,
+        answer_persona=answer_persona,
         default_collection=default_collection,
         default_top_k=default_top_k,
         embed_dim=embed_dim,

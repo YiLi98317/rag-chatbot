@@ -15,6 +15,12 @@ def generate(prompt: str, model: str, base_url: str) -> str:
     num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "2048") or "2048")
     num_batch = int(os.getenv("OLLAMA_NUM_BATCH", "128") or "128")
     request_timeout_s = int(os.getenv("OLLAMA_REQUEST_TIMEOUT_S", "600") or "600")
+    temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.3") or "0.3")
+    # Clamp to a sane range (Ollama accepts 0..)
+    if temperature < 0.0:
+        temperature = 0.0
+    if temperature > 2.0:
+        temperature = 2.0
 
     payload = {
         "model": model,
@@ -23,6 +29,7 @@ def generate(prompt: str, model: str, base_url: str) -> str:
         "options": {
             "num_ctx": num_ctx,
             "num_batch": num_batch,
+            "temperature": temperature,
         },
     }
 
@@ -67,3 +74,41 @@ def generate(prompt: str, model: str, base_url: str) -> str:
     if not isinstance(output, str):
         raise RuntimeError(f"Unexpected generate response: {data}")
     return output
+
+
+def generate_json(
+    prompt: str,
+    *,
+    model: str,
+    base_url: str,
+    temperature: float = 0.1,
+    num_predict: int = 256,
+) -> str:
+    """
+    Call Ollama /api/generate with JSON output format enabled when supported.
+    Returns raw response text (expected to be a JSON string/object).
+    """
+    request_timeout_s = int(os.getenv("OLLAMA_REQUEST_TIMEOUT_S", "600") or "600")
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "format": "json",
+        "options": {
+            "temperature": max(0.0, min(1.0, float(temperature))),
+            "num_predict": int(num_predict),
+        },
+    }
+    resp = requests.post(
+        _generate_endpoint(base_url),
+        json=payload,
+        timeout=request_timeout_s,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    out = data.get("response")
+    if not isinstance(out, str):
+        raise RuntimeError(f"Unexpected generate_json response: {data}")
+    if not out.strip():
+        raise RuntimeError(f"Planner returned empty response: {data}")
+    return out.strip()
