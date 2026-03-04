@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from chatbot.llm.ollama_chat import generate
+from chatbot.llm.client import generate as llm_generate
 from chatbot.observability.logging import get_logger
 from chatbot.rag.pipeline import build_prompt
 from chatbot.retrieval.retriever import retrieve_top_k
@@ -66,7 +66,7 @@ def answer_question(
 
     contexts = [r.get("text", "") for r in results]
     prompt = build_prompt(question, contexts, debug=False)
-    answer = generate(prompt=prompt, model=s.chat_model, base_url=s.ollama_base_url)
+    answer = llm_generate(prompt, settings=s, purpose="answer")
 
     citations: List[Dict[str, Any]] = []
     for r in results:

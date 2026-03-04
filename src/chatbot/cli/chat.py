@@ -9,8 +9,8 @@ from rich import print as rprint
 from chatbot.config import get_settings
 from chatbot.retrieval.retriever import retrieve_top_k
 from chatbot.vectorstore import get_vector_store
-from chatbot.llm.ollama_chat import generate
-from chatbot.rag.pipeline import build_prompt
+from chatbot.llm.client import generate as llm_generate
+from chatbot.rag.pipeline import build_prompt, format_debug_fields
 
 app = typer.Typer(add_completion=False)
 
@@ -69,7 +69,14 @@ def run(
     settings = get_settings()
     coll = collection or settings.default_collection
     emb = embed_model or getattr(settings, "embed_model", "nomic-embed-text")
-    chat = chat_model or getattr(settings, "chat_model", "llama3.1")
+    if chat_model:
+        chat = chat_model
+    else:
+        provider = (getattr(settings, "llm_provider", "deepseek") or "deepseek").strip().lower()
+        if provider in {"deepseek", "api"}:
+            chat = getattr(settings, "model_name", "deepseek-chat")
+        else:
+            chat = getattr(settings, "chat_model", "llama3.1")
     k = top_k if top_k is not None else getattr(settings, "default_top_k", 4)
     store = get_vector_store(settings)
 
@@ -123,8 +130,10 @@ def run(
                 rprint("[dim]Please rephrase or specify the exact one you want (e.g., 'Track 1045').[/dim]")
                 continue
             contexts = [r.get("text", "") for r in results]
-            prompt_text = build_prompt(prompt, contexts, debug=debug)
+            # Always generate the "actual" answer using the normal prompt.
+            prompt_text_answer = build_prompt(prompt, contexts, debug=False)
             if debug:
+                prompt_text_debug = build_prompt(prompt, contexts, debug=True)
                 rprint(f"[dim]Retrieved {len(results)} contexts from [cyan]{coll}[/cyan][/dim]")
                 for idx, r in enumerate(results, start=1):
                     score = r.get("score")
@@ -137,11 +146,16 @@ def run(
                     rprint(f"[dim]{idx}.[/dim] score={score:.4f} {table} {title}".rstrip())
                     if text_preview:
                         rprint(f"[dim]    {text_preview}[/dim]")
-                rprint(f"[dim]Prompt length: chars={len(prompt_text)}[/dim]")
-            answer = generate(prompt=prompt_text, model=chat, base_url=settings.ollama_base_url)
+                rprint(f"[dim]Prompt length: chars={len(prompt_text_debug)}[/dim]")
+
+            answer = llm_generate(prompt_text_answer, settings=settings, purpose="answer", model_override=chat)
             answer_clean = (answer or "").strip()
             if answer_clean.lower() in _NON_ANSWERS or len(answer_clean) < 2:
                 answer_clean = _fallback_reply(prompt, results, coll)
+
+            if debug:
+                debug_out = llm_generate(prompt_text_debug, settings=settings, purpose="answer", model_override=chat)
+                answer_clean = format_debug_fields(actual_answer=answer_clean, debug_text=debug_out)
             rprint(f"[bold green]assistant>[/bold green] {answer_clean}")
             if results:
                 rprint("[dim]Top sources:[/dim]")
@@ -150,7 +164,9 @@ def run(
                     title = src.get("title") or src.get("Name") or src.get("TrackId") or ""
                     rprint(f"[dim]{idx}.[/dim] {src.get('table', '')} {title}")
         except Exception as e:
+            import traceback
             rprint(f"[red]Error:[/red] {e}")
+            rprint("[dim]" + traceback.format_exc() + "[/dim]")
 
 
 def main():

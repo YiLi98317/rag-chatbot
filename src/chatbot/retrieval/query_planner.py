@@ -5,7 +5,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import requests
+from chatbot.llm.client import generate as llm_generate
+from chatbot.settings import Settings
 
 
 @dataclass(frozen=True)
@@ -98,36 +99,6 @@ _STOP_WORDS = _WRAPPER_WORDS.union(
 )
 
 
-def _ollama_generate_json(prompt: str, model: str, base_url: str, temperature: float = 0.1, num_predict: int = 256) -> str:
-    """
-    Call Ollama /api/generate with options tuned for planning (low temperature, short output).
-    Returns raw response text (expected to be JSON string).
-    """
-    url = f"{base_url.rstrip('/')}/api/generate"
-    resp = requests.post(
-        url,
-        json={
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            # Ask Ollama to enforce JSON output when supported.
-            "format": "json",
-            "options": {
-                "temperature": max(0.0, min(1.0, float(temperature))),
-                "num_predict": int(num_predict),
-            },
-        },
-        timeout=60,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    out = data.get("response")
-    if not isinstance(out, str):
-        raise RuntimeError(f"Unexpected planner response: {data}")
-    if not out.strip():
-        raise RuntimeError(f"Planner returned empty response: {data}")
-    return out.strip()
-
 def _extract_json_object_text(raw_out: str) -> str:
     """
     Best-effort extraction of a JSON object string from model output.
@@ -173,6 +144,10 @@ def _build_planner_prompt(raw_query: str, supported_tables: Sequence[str]) -> st
         "Rules:\n"
         "- Keep lexical_query short and entity-focused.\n"
         "- Keep vector_query concise; remove wrappers like 'do you know' or 'tell me about'.\n"
+        "- Language: lexical_query, vector_query, entity_candidates, and clarification_question MUST be in the same user-facing language as raw_query.\n"
+        "  - If raw_query is Chinese, output Chinese. Do NOT translate into English.\n"
+        "  - If raw_query is mixed Chinese + Latin tokens (e.g. product/brand/model names), output Chinese-dominant phrasing and preserve those tokens as-is (e.g. iPhone16).\n"
+        "  - If you translate internally to reason, translate back to match raw_query language BEFORE emitting JSON.\n"
         "- If user asks about a specific named thing, set intent=entity_lookup and include that phrase in entity_candidates.\n"
         "- If the query is vague/semantic, set intent=semantic and focus vector_query accordingly.\n"
         "- Never invent database facts; only rewrite the query and propose filters.\n\n"
@@ -210,6 +185,18 @@ def _build_planner_prompt(raw_query: str, supported_tables: Sequence[str]) -> st
         '  "lexical_query": "Back In Black",\n'
         '  "vector_query": "album Back In Black track list",\n'
         '  "filters": {"table": ["Album", "Track"]},\n'
+        '  "needs_clarification": false,\n'
+        '  "clarification_question": ""\n'
+        '}\n'
+        "User: 如何租赁iphone16\n"
+        '{\n'
+        '  "raw_query": "如何租赁iphone16",\n'
+        '  "intent": "semantic",\n'
+        '  "entity_candidates": [],\n'
+        '  "preferred_tables": ["Company"],\n'
+        '  "lexical_query": "租赁 iphone16",\n'
+        '  "vector_query": "iphone16 租赁流程 / 如何租赁 iphone16",\n'
+        '  "filters": {"table": ["Company"]},\n'
         '  "needs_clarification": false,\n'
         '  "clarification_question": ""\n'
         '}\n'
@@ -524,8 +511,7 @@ def _post_process_plan(plan: QueryPlan) -> QueryPlan:
 
 def plan_query(
     raw_query: str,
-    ollama_base_url: str,
-    model: str,
+    settings: Settings,
     supported_tables: Sequence[str] | None = None,
     enable_llm: bool = True,
     debug: bool = False,
@@ -540,7 +526,7 @@ def plan_query(
         return deterministic_fallback_plan(raw_query, supported_tables)
     try:
         prompt = _build_planner_prompt(raw_query, supported_tables)
-        raw_out = _ollama_generate_json(prompt=prompt, model=model, base_url=ollama_base_url, temperature=0.1, num_predict=256)
+        raw_out = llm_generate(prompt, settings=settings, purpose="planner_json")
         if debug:
             try:
                 print("PLANNER_RAW_OUTPUT:")

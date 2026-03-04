@@ -1,4 +1,5 @@
 qdrant-client
+setuptools<81
 pymilvus==2.5.16
 fastapi==0.128.1
 uvicorn==0.40.0
@@ -19,4 +20,5 @@ numpy
 cryptography
 openpyxl
 pandas
+xlrd
 

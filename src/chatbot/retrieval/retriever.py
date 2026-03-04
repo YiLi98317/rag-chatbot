@@ -57,29 +57,28 @@ def retrieve_top_k(
     ]
     if settings:
         enable_planner = getattr(settings, "enable_query_planner", True)
-        # Prefer settings, but fall back to the function argument (env-driven upstream).
-        planner_base_url = getattr(settings, "ollama_base_url", None) or ollama_base_url
-        planner_model = getattr(settings, "chat_model", "llama3.1")
     else:
-        enable_planner = True
-        planner_base_url = ollama_base_url
-        planner_model = "llama3.1"
+        enable_planner = False
     if debug:
         try:
             print("PLANNER_CONFIG:")
             print("  enable_llm:", bool(enable_planner))
-            print("  base_url:", planner_base_url)
-            print("  model:", planner_model)
+            if settings:
+                print("  llm_provider:", getattr(settings, "llm_provider", ""))
+                print("  model_name:", getattr(settings, "model_name", ""))
+                print("  ollama_base_url:", getattr(settings, "ollama_base_url", ""))
         except Exception:
             pass
-    plan: QueryPlan = plan_query(
-        raw_query=query,
-        ollama_base_url=planner_base_url,
-        model=planner_model,
-        supported_tables=supported_tables,
-        enable_llm=enable_planner,
-        debug=debug,
-    )
+    if settings:
+        plan: QueryPlan = plan_query(
+            raw_query=query,
+            settings=settings,
+            supported_tables=supported_tables,
+            enable_llm=enable_planner,
+            debug=debug,
+        )
+    else:
+        plan = deterministic_fallback_plan(query, supported_tables)
     if debug:
         try:
             print("QUERY_PLAN:")
