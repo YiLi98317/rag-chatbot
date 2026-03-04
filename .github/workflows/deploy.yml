@@ -12,7 +12,7 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
@@ -160,12 +160,11 @@ jobs:
             # Convert repository to lowercase for image pull (Docker requirement)
             REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
             API_IMAGE="ghcr.io/${REPO_LOWER}:latest"
-            echo "Pulling ${API_IMAGE}..."
+            echo "Pulling ${API_IMAGE}... (no timeout, may take several minutes for large image)"
             # Verify the image name in docker-compose matches
             COMPOSE_IMAGE=$(grep "image:" "$COMPOSE_FILE" | grep "api" -A 1 | grep "image:" | sed 's/.*image: *//' | head -1)
             echo "Docker-compose expects image: ${COMPOSE_IMAGE}"
-            # Try to pull with retries
-            for retry in {1..3}; do
+            for retry in 1 2 3; do
               if docker pull "${API_IMAGE}" 2>&1; then
                 echo "✅ API image pulled successfully"
                 break
@@ -173,8 +172,8 @@ jobs:
                 if [ $retry -eq 3 ]; then
                   echo "⚠️  Failed to pull API image after 3 attempts, will use existing if available"
                 else
-                  echo "Retrying API image pull... (attempt $retry/3)"
-                  sleep 5
+                  echo "Retrying API image pull in 10s..."
+                  sleep 10
                 fi
               fi
             done
@@ -184,7 +183,7 @@ jobs:
             echo "Pulling infrastructure images with retries..."
             for service in etcd minio; do
               echo "Pulling ${service}..."
-              for retry in {1..3}; do
+              for retry in 1 2 3; do
                 if docker compose -f "$COMPOSE_FILE" pull "${service}" 2>&1; then
                   echo "✅ ${service} pulled successfully"
                   break
@@ -192,7 +191,7 @@ jobs:
                   if [ $retry -eq 3 ]; then
                     echo "⚠️  Failed to pull ${service} after 3 attempts, continuing..."
                   else
-                    echo "Retrying ${service} pull... (attempt $retry/3)"
+                    echo "Retrying ${service} pull in 5s..."
                     sleep 5
                   fi
                 fi
@@ -217,7 +216,7 @@ jobs:
             echo "Pulling Milvus and Ollama images with retries..."
             for service in milvus ollama; do
               echo "Pulling ${service}..."
-              for retry in {1..3}; do
+              for retry in 1 2 3; do
                 if docker compose -f "$COMPOSE_FILE" pull "${service}" 2>&1; then
                   echo "✅ ${service} pulled successfully"
                   break
@@ -225,7 +224,7 @@ jobs:
                   if [ $retry -eq 3 ]; then
                     echo "⚠️  Failed to pull ${service} after 3 attempts, continuing..."
                   else
-                    echo "Retrying ${service} pull... (attempt $retry/3)"
+                    echo "Retrying ${service} pull in 5s..."
                     sleep 5
                   fi
                 fi
