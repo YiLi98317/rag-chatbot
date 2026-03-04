@@ -105,6 +105,10 @@ jobs:
             CHAT_MODEL=${{ secrets.CHAT_MODEL }}
             TOP_K_DEFAULT=${{ secrets.TOP_K_DEFAULT }}
             DEBUG_TRACES=${{ secrets.DEBUG_TRACES }}
+            API_KEY=${{ secrets.API_KEY }}
+            API_BASE_URL=${{ secrets.API_BASE_URL }}
+            MODEL_NAME=${{ secrets.MODEL_NAME }}
+            LLM_PROVIDER=${{ secrets.LLM_PROVIDER }}
             ENVEOF
             # Apply defaults for empty values
             sed -i 's/^VECTOR_PROVIDER=$/VECTOR_PROVIDER=milvus/' /opt/rag/.env
@@ -117,6 +121,9 @@ jobs:
             sed -i 's/^CHAT_MODEL=$/CHAT_MODEL=deepseek-r1/' /opt/rag/.env
             sed -i 's/^TOP_K_DEFAULT=$/TOP_K_DEFAULT=10/' /opt/rag/.env
             sed -i 's/^DEBUG_TRACES=$/DEBUG_TRACES=0/' /opt/rag/.env
+            sed -i 's|^API_BASE_URL=$|API_BASE_URL=https://api.deepseek.com|' /opt/rag/.env
+            sed -i 's/^MODEL_NAME=$/MODEL_NAME=deepseek-chat/' /opt/rag/.env
+            sed -i 's/^LLM_PROVIDER=$/LLM_PROVIDER=deepseek/' /opt/rag/.env
             # Add Qdrant vars if provided
             [ -n "${{ secrets.QDRANT_URL }}" ] && echo "QDRANT_URL=${{ secrets.QDRANT_URL }}" >> /opt/rag/.env
             [ -n "${{ secrets.QDRANT_API_KEY }}" ] && echo "QDRANT_API_KEY=${{ secrets.QDRANT_API_KEY }}" >> /opt/rag/.env
