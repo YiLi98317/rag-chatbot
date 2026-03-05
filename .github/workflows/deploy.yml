@@ -130,6 +130,7 @@ jobs:
             chmod 600 /opt/rag/.env
 
       - name: Deploy services on ECS
+        timeout-minutes: 30
         uses: appleboy/ssh-action@v1.2.5
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
@@ -160,22 +161,27 @@ jobs:
             # Convert repository to lowercase for image pull (Docker requirement)
             REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
             API_IMAGE="ghcr.io/${REPO_LOWER}:latest"
-            echo "Pulling ${API_IMAGE}... (heartbeat every 30s so you can see progress)"
+            echo "Pulling ${API_IMAGE}... (heartbeat every 30s with download progress)"
             # Verify the image name in docker-compose matches
             COMPOSE_IMAGE=$(grep "image:" "$COMPOSE_FILE" | grep "api" -A 1 | grep "image:" | sed 's/.*image: *//' | head -1)
             echo "Docker-compose expects image: ${COMPOSE_IMAGE}"
             for retry in 1 2 3; do
               echo "Attempt $retry/3..."
-              docker pull "${API_IMAGE}" 2>&1 &
+              PULL_LOG=$(mktemp)
+              docker pull "${API_IMAGE}" >> "$PULL_LOG" 2>&1 &
               PULL_PID=$!
               ELAPSED=0
               while kill -0 $PULL_PID 2>/dev/null; do
                 sleep 30
                 ELAPSED=$((ELAPSED + 30))
-                echo "[heartbeat] Still pulling API image... ${ELAPSED}s elapsed"
+                PROGRESS=$(tail -1 "$PULL_LOG" 2>/dev/null | sed 's/^[[:space:]]*//' | head -c 120)
+                echo "[heartbeat] ${ELAPSED}s elapsed | latest: ${PROGRESS:-pull in progress...}"
               done
               wait $PULL_PID
               PULL_EXIT=$?
+              echo "=== Pull output (last 50 lines) ==="
+              tail -50 "$PULL_LOG" 2>/dev/null || true
+              rm -f "$PULL_LOG"
               if [ $PULL_EXIT -eq 0 ]; then
                 echo "✅ API image pulled successfully"
                 break
