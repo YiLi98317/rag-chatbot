@@ -61,36 +61,12 @@ services:
       timeout: 5s
       retries: 5
 
-  ollama:
-    image: ollama/ollama:latest
-    restart: unless-stopped
-    environment:
-      - OLLAMA_HOST=0.0.0.0:11434
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    volumes:
-      - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
   api:
     image: ghcr.io/${GITHUB_REPOSITORY:-owner/repo}:latest
     container_name: rag_api
     restart: unless-stopped
     depends_on:
       milvus:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
     ports:
       - "80:8000"
@@ -100,7 +76,6 @@ services:
     environment:
       - MILVUS_URI=http://milvus:19530
       - MILVUS_LITE_DB=
-      - OLLAMA_BASE_URL=http://ollama:11434
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 30s
@@ -112,4 +87,3 @@ volumes:
   etcd_data:
   minio_data:
   milvus_data:
-  ollama_data:

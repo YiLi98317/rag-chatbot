@@ -52,7 +52,7 @@ Go to your GitHub repository: **Settings → Secrets and variables → Actions �
 - **MILVUS_URI** = `http://milvus:19530` (default - uses service name from docker-compose)
 - **MILVUS_DB** = `default` (default)
 - **MILVUS_COLLECTION** = `chatbot_docs` (default)
-- **OLLAMA_BASE_URL** = `http://ollama:11434` (default - uses service name from docker-compose)
+- **OLLAMA_BASE_URL** = optional; not used on ECS when LLM is DeepSeek and embeddings are sentence_transformers (default in workflow uses a placeholder)
 - **EMBED_PROVIDER** = `sentence_transformers` (default)
 - **EMBED_MODEL** = `BAAI/bge-m3` (default)
 - **CHAT_MODEL** = `deepseek-r1` (default)
@@ -84,7 +84,7 @@ This will trigger the GitHub Actions workflow which will:
 1. Build your Docker image
 2. Push it to GitHub Container Registry (GHCR)
 3. Deploy to your ECS server
-4. Start all services (API, Milvus, Ollama, etc.)
+4. Start all services (API, Milvus; Ollama is not deployed on ECS when using DeepSeek + sentence_transformers)
 
 ### Step 6: Verify Deployment
 
@@ -178,10 +178,10 @@ Navigate to your repository: **Settings → Secrets and variables → Actions �
 | `MILVUS_URI` | `http://milvus:19530` | Milvus connection URI (use service name in compose) |
 | `MILVUS_DB` | `default` | Milvus database name |
 | `MILVUS_COLLECTION` | `chatbot_docs` | Default collection name |
-| `OLLAMA_BASE_URL` | `http://ollama:11434` | Ollama service URL (use service name in compose) |
+| `OLLAMA_BASE_URL` | (optional) | Only used when LLM_PROVIDER=ollama; not required for DeepSeek + sentence_transformers on ECS |
 | `EMBED_PROVIDER` | `sentence_transformers` | Embedding provider (sentence_transformers or ollama) |
-| `EMBED_MODEL` | `BAAI/bge-m3` | Embedding model name |
-| `CHAT_MODEL` | `deepseek-r1` | Chat/LLM model name (must exist in Ollama) |
+| `EMBED_MODEL` | `BAAI/bge-m3` | Embedding model name (sentence_transformers uses model in API image) |
+| `CHAT_MODEL` | `deepseek-r1` | Chat model name (for display; DeepSeek uses MODEL_NAME/API) |
 | `TOP_K_DEFAULT` | `10` | Default number of retrieval results |
 | `DEBUG_TRACES` | `0` | Enable debug traces (0 or 1) |
 
@@ -211,7 +211,7 @@ The deployment includes:
 
 - **API**: FastAPI service on port 80 (mapped from container port 8000)
 - **Milvus**: Vector database with etcd and minio dependencies
-- **Ollama**: LLM service for chat and embeddings (if configured)
+- **Ollama**: Not deployed on ECS by default; chat uses DeepSeek API and embeddings use sentence_transformers (BAAI/bge-m3 in the API image). Add Ollama to docker-compose only if you switch to local LLM/embeddings.
 
 All services are configured with:
 - Health checks
@@ -324,9 +324,9 @@ Consider creating a dedicated `deploy` user with sudo access instead of using ro
 3. Ensure `ECS_GHCR_TOKEN` or `GITHUB_TOKEN` has `read:packages` permission
 4. Check package visibility settings (private packages require authentication)
 
-### Milvus/Ollama Not Ready
+### Milvus Not Ready
 
-1. Check service logs: `docker compose logs milvus` or `docker compose logs ollama`
+1. Check service logs: `docker compose logs milvus`
 2. Verify health checks: Wait for services to become healthy (may take 1-2 minutes)
 3. Check resource usage: `docker stats`
 4. Verify volumes: `docker volume ls`
@@ -353,9 +353,9 @@ docker compose up -d api
 
 ## Maintenance
 
-### Update Models in Ollama
+### Update Models (Ollama optional)
 
-SSH to ECS and pull new models:
+Ollama is not deployed on ECS by default. If you add the Ollama service back to docker-compose for local LLM/embeddings, SSH to ECS and pull models:
 
 ```bash
 docker compose exec ollama ollama pull <model-name>

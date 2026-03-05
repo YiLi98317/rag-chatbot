@@ -115,7 +115,7 @@ jobs:
             sed -i 's|^MILVUS_URI=$|MILVUS_URI=http://milvus:19530|' /opt/rag/.env
             sed -i 's/^MILVUS_DB=$/MILVUS_DB=default/' /opt/rag/.env
             sed -i 's/^MILVUS_COLLECTION=$/MILVUS_COLLECTION=chatbot_docs/' /opt/rag/.env
-            sed -i 's|^OLLAMA_BASE_URL=$|OLLAMA_BASE_URL=http://ollama:11434|' /opt/rag/.env
+            sed -i 's|^OLLAMA_BASE_URL=$|OLLAMA_BASE_URL=http://localhost:11434|' /opt/rag/.env
             sed -i 's/^EMBED_PROVIDER=$/EMBED_PROVIDER=sentence_transformers/' /opt/rag/.env
             sed -i 's|^EMBED_MODEL=$|EMBED_MODEL=BAAI/bge-m3|' /opt/rag/.env
             sed -i 's/^CHAT_MODEL=$/CHAT_MODEL=deepseek-r1/' /opt/rag/.env
@@ -160,12 +160,23 @@ jobs:
             # Convert repository to lowercase for image pull (Docker requirement)
             REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
             API_IMAGE="ghcr.io/${REPO_LOWER}:latest"
-            echo "Pulling ${API_IMAGE}... (no timeout, may take several minutes for large image)"
+            echo "Pulling ${API_IMAGE}... (heartbeat every 30s so you can see progress)"
             # Verify the image name in docker-compose matches
             COMPOSE_IMAGE=$(grep "image:" "$COMPOSE_FILE" | grep "api" -A 1 | grep "image:" | sed 's/.*image: *//' | head -1)
             echo "Docker-compose expects image: ${COMPOSE_IMAGE}"
             for retry in 1 2 3; do
-              if docker pull "${API_IMAGE}" 2>&1; then
+              echo "Attempt $retry/3..."
+              docker pull "${API_IMAGE}" 2>&1 &
+              PULL_PID=$!
+              ELAPSED=0
+              while kill -0 $PULL_PID 2>/dev/null; do
+                sleep 30
+                ELAPSED=$((ELAPSED + 30))
+                echo "[heartbeat] Still pulling API image... ${ELAPSED}s elapsed"
+              done
+              wait $PULL_PID
+              PULL_EXIT=$?
+              if [ $PULL_EXIT -eq 0 ]; then
                 echo "✅ API image pulled successfully"
                 break
               else
@@ -212,9 +223,9 @@ jobs:
             done
 
             echo ""
-            echo "=== Starting Milvus and Ollama ==="
-            echo "Pulling Milvus and Ollama images with retries..."
-            for service in milvus ollama; do
+            echo "=== Starting Milvus ==="
+            echo "Pulling Milvus image with retries..."
+            for service in milvus; do
               echo "Pulling ${service}..."
               for retry in 1 2 3; do
                 if docker compose -f "$COMPOSE_FILE" pull "${service}" 2>&1; then
@@ -231,34 +242,22 @@ jobs:
               done
             done
 
-            docker compose -f "$COMPOSE_FILE" up -d milvus ollama
+            docker compose -f "$COMPOSE_FILE" up -d milvus
 
             echo ""
-            echo "=== Waiting for Milvus and Ollama to be healthy ==="
+            echo "=== Waiting for Milvus to be healthy ==="
             for i in {1..60}; do
               milvus_status=$(docker compose -f "$COMPOSE_FILE" ps milvus 2>/dev/null | grep -oE "(healthy|unhealthy|Up)" | head -1 || echo "unknown")
-              ollama_status=$(docker compose -f "$COMPOSE_FILE" ps ollama 2>/dev/null | grep -oE "(healthy|unhealthy|Up)" | head -1 || echo "unknown")
-              if [[ "$milvus_status" == *"healthy"* ]] && [[ "$ollama_status" == *"healthy"* ]]; then
-                echo "✅ Milvus and Ollama are healthy"
+              if [[ "$milvus_status" == *"healthy"* ]]; then
+                echo "✅ Milvus is healthy"
                 break
-              elif [[ "$milvus_status" == *"Up"* ]] && [[ "$ollama_status" == *"Up"* ]] && [ $i -gt 20 ]; then
-                echo "⚠️  Services are up but not yet healthy, proceeding..."
+              elif [[ "$milvus_status" == *"Up"* ]] && [ $i -gt 20 ]; then
+                echo "⚠️  Milvus is up but not yet healthy, proceeding..."
                 break
               fi
-              echo "Waiting for Milvus ($milvus_status) and Ollama ($ollama_status)... ($i/60)"
+              echo "Waiting for Milvus ($milvus_status)... ($i/60)"
               sleep 3
             done
-
-            echo ""
-            echo "=== Pulling Ollama chat model ==="
-            CHAT_MODEL=$(grep '^CHAT_MODEL=' /opt/rag/.env 2>/dev/null | cut -d= -f2-)
-            CHAT_MODEL=${CHAT_MODEL:-deepseek-r1}
-            echo "Pulling model: ${CHAT_MODEL}"
-            if docker compose -f "$COMPOSE_FILE" exec -T ollama ollama pull "${CHAT_MODEL}" 2>&1; then
-              echo "✅ Ollama model ${CHAT_MODEL} pulled successfully"
-            else
-              echo "⚠️  Failed to pull Ollama model ${CHAT_MODEL}, API may fail if model is missing"
-            fi
 
             echo ""
             echo "=== Starting API service ==="
