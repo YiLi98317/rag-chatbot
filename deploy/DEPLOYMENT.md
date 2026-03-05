@@ -106,6 +106,29 @@ docker compose ps
 docker compose logs api
 ```
 
+### SSH and test with the CLI on the server
+
+From your machine, SSH into the ECS host (use the same user and IP as in your GitHub secrets, e.g. `ECS_USER` / `ECS_HOST` from `.env`):
+
+```bash
+# Replace with your ECS IP (or use the value from .env ECS_HOST)
+ssh root@<your-ecs-ip>
+```
+
+Then go to the app directory and run the chatbot CLI inside the API container (it uses the same `.env` and services as the running API):
+
+```bash
+cd /opt/rag
+
+# One-off query (replace with your question)
+docker compose exec api python -m chatbot.cli.query "如何租赁 iPhone 16" --collection chatbot_docs
+
+# Interactive chat ( -it for keyboard input)
+docker compose exec -it api python -m chatbot.cli.chat --collection chatbot_docs
+```
+
+To exit the chat, type `quit` or `exit`. The container uses the same Milvus and `.env` (TOP_K, LLM_MAX_TOKENS, etc.) as the HTTP API.
+
 ---
 
 ## Prerequisites

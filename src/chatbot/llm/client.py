@@ -149,7 +149,7 @@ def stream_answer_chunks(
     model_override: Optional[str] = None,
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
-) -> Iterator[Union[str, Tuple[None, Optional[Dict[str, Any]], Optional[float]]]:
+) -> Iterator[Union[str, Tuple[None, Optional[Dict[str, Any]], Optional[float]]]]:
     """
     Yields content chunks (str), then (None, usage_dict, ttfb_s) at the end.
     Use for streaming the answer to the client.

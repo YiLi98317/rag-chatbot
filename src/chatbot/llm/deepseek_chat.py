@@ -219,7 +219,7 @@ def stream_chunks(
     temperature: float = 0.3,
     max_tokens: Optional[int] = None,
     request_timeout_s: int = 120,
-) -> Iterator[Union[str, Tuple[None, Optional[Dict[str, Any]], Optional[float]]]:
+) -> Iterator[Union[str, Tuple[None, Optional[Dict[str, Any]], Optional[float]]]]:
     """
     Streams content deltas from DeepSeek. Yields each content delta as str,
     then yields (None, usage, ttfb_s) at the end.
