@@ -56,11 +56,12 @@ Go to your GitHub repository: **Settings → Secrets and variables → Actions �
 - **EMBED_PROVIDER** = `sentence_transformers` (default)
 - **EMBED_MODEL** = `BAAI/bge-m3` (default)
 - **CHAT_MODEL** = `deepseek-r1` (default)
-- **TOP_K_DEFAULT** = `10` (default)
+- **TOP_K_DEFAULT** / **TOP_K** = `5` (default in workflow); number of retrieval contexts.
+- **LLM_MAX_TOKENS** = `250` (default in workflow); max answer length in tokens. App also reads **MAX_TOKEN** if **LLM_MAX_TOKENS** is unset.
 - **DEBUG_TRACES** = `0` (default)
 - **ENABLE_QUERY_PLANNER** = `true` (default). Set to `false` to skip the query-planner LLM call and use a deterministic plan instead; typically saves ~8–12 seconds per query when using DeepSeek (one fewer API round trip).
 
-**Note**: If you don't set the application secrets, the workflow will use the defaults listed above.
+**Note**: If you don't set the application secrets, the workflow will use the defaults listed above. The API container uses `env_file: .env` from the compose project directory, so the `.env` generated on ECS (with the vars above and defaults) is loaded at runtime. Optional GitHub secrets **TOP_K** and **LLM_MAX_TOKENS** override defaults when set.
 
 **Query latency**: Each query does two sequential DeepSeek API calls by default: (1) query planner (intent/rewriting), (2) answer generation. Total time is often ~20–25 seconds. To reduce latency, set `ENABLE_QUERY_PLANNER=false` so only the answer call is made; retrieval then uses a deterministic plan (no LLM). The API logs `qa_latency` with `retrieval_s` and `llm_s` so you can see where time is spent.
 

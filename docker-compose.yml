@@ -61,6 +61,8 @@ services:
       - ollama
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       VECTOR_PROVIDER: milvus
       MILVUS_URI: http://milvus:19530
@@ -75,6 +77,7 @@ services:
       CHAT_MODEL: deepseek-r1
       TOP_K_DEFAULT: 10
       DEBUG_TRACES: 0
+      # Override via .env: TOP_K or TOP_K_DEFAULT, LLM_MAX_TOKENS or MAX_TOKEN
 
 volumes:
   etcd_data:

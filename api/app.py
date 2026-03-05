@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse
 
 # Ensure `src/` is on sys.path so `import chatbot` works when running uvicorn
 # directly from the repo root (without requiring PYTHONPATH).
@@ -14,7 +15,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from chatbot.observability.logging import get_logger
-from chatbot.service.qa_service import answer_question
+from chatbot.service.qa_service import answer_question, answer_question_stream
 from chatbot.settings import get_settings
 from chatbot.vectorstore import get_vector_store
 
@@ -94,4 +95,38 @@ def qa(req: QaRequest):
     except Exception as e:
         logger.exception("qa_error")
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
+def _sse_stream_qa(req: QaRequest):
+    """Generator that yields SSE lines for streaming QA."""
+    s = get_settings()
+    debug_traces = bool(getattr(s, "debug_traces", False))
+    try:
+        for event_type, payload in answer_question_stream(
+            req.question,
+            top_k=req.top_k,
+            filters=req.filters,
+            session_id=req.session_id,
+            settings=s,
+            debug_traces=debug_traces,
+        ):
+            data = json.dumps(payload, ensure_ascii=False)
+            yield f"event: {event_type}\ndata: {data}\n\n"
+    except Exception as e:
+        logger.exception("qa_stream_error")
+        yield f"event: error\ndata: {json.dumps({'detail': f'{type(e).__name__}: {e}'})}\n\n"
+
+
+@app.post("/v1/qa/stream")
+def qa_stream(req: QaRequest):
+    """Stream QA response as Server-Sent Events. Events: start, chunk, done (or error)."""
+    return StreamingResponse(
+        _sse_stream_qa(req),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 

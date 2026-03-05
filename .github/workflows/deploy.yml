@@ -104,6 +104,8 @@ jobs:
             EMBED_MODEL=${{ secrets.EMBED_MODEL }}
             CHAT_MODEL=${{ secrets.CHAT_MODEL }}
             TOP_K_DEFAULT=${{ secrets.TOP_K_DEFAULT }}
+            TOP_K=${{ secrets.TOP_K }}
+            LLM_MAX_TOKENS=${{ secrets.LLM_MAX_TOKENS }}
             DEBUG_TRACES=${{ secrets.DEBUG_TRACES }}
             API_KEY=${{ secrets.API_KEY }}
             API_BASE_URL=${{ secrets.API_BASE_URL }}
@@ -119,7 +121,9 @@ jobs:
             sed -i 's/^EMBED_PROVIDER=$/EMBED_PROVIDER=sentence_transformers/' /opt/rag/.env
             sed -i 's|^EMBED_MODEL=$|EMBED_MODEL=BAAI/bge-m3|' /opt/rag/.env
             sed -i 's/^CHAT_MODEL=$/CHAT_MODEL=deepseek-r1/' /opt/rag/.env
-            sed -i 's/^TOP_K_DEFAULT=$/TOP_K_DEFAULT=10/' /opt/rag/.env
+            sed -i 's/^TOP_K_DEFAULT=$/TOP_K_DEFAULT=5/' /opt/rag/.env
+            sed -i 's/^TOP_K=$/TOP_K=5/' /opt/rag/.env
+            sed -i 's/^LLM_MAX_TOKENS=$/LLM_MAX_TOKENS=250/' /opt/rag/.env
             sed -i 's/^DEBUG_TRACES=$/DEBUG_TRACES=0/' /opt/rag/.env
             sed -i 's|^API_BASE_URL=$|API_BASE_URL=https://api.deepseek.com|' /opt/rag/.env
             sed -i 's/^MODEL_NAME=$/MODEL_NAME=deepseek-chat/' /opt/rag/.env

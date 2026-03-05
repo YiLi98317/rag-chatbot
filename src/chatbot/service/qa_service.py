@@ -3,9 +3,9 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from chatbot.llm.client import generate as llm_generate, generate_with_metrics
+from chatbot.llm.client import generate as llm_generate, generate_with_metrics, stream_answer_chunks
 from chatbot.observability.logging import get_logger
 from chatbot.rag.pipeline import build_prompt
 from chatbot.retrieval.retriever import retrieve_top_k
@@ -138,4 +138,101 @@ def answer_question(
         retrieval=retrieval_debug,
         performance_metrics=performance_metrics,
     )
+
+
+def answer_question_stream(
+    question: str,
+    *,
+    top_k: Optional[int] = None,
+    filters: Optional[Dict[str, Any]] = None,
+    session_id: Optional[str] = None,
+    settings: Optional[Settings] = None,
+    debug_traces: bool = False,
+) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+    """
+    Yields ("start", {...}), then ("chunk", {"content": "..."}), then ("done", {"performance_metrics": ...}).
+    Caller can send these as SSE or NDJSON.
+    """
+    s = settings or get_settings()
+    store = get_vector_store(s)
+    trace_id = str(uuid.uuid4())
+    k = int(top_k) if top_k is not None else int(getattr(s, "default_top_k", 10) or 10)
+
+    logger.info(
+        "qa_stream_request trace_id=%s provider=%s k=%s",
+        trace_id,
+        getattr(s, "vector_provider", ""),
+        k,
+    )
+
+    retrieval_metrics: Dict[str, Any] = {}
+    results = retrieve_top_k(
+        store=store,
+        collection=s.default_collection,
+        query=question,
+        embed_model=s.embed_model,
+        ollama_base_url=s.ollama_base_url,
+        top_k=k,
+        db_uri=s.db_uri,
+        debug=bool(debug_traces),
+        filters_override=filters,
+        out_metrics=retrieval_metrics,
+    )
+
+    contexts = [r.get("text", "") for r in results]
+    t_prompt_start = time.perf_counter()
+    prompt = build_prompt(question, contexts, debug=False)
+    t_prompt_build_s = time.perf_counter() - t_prompt_start
+
+    citations = []
+    for r in results:
+        meta = r.get("metadata", {}) or {}
+        citations.append(
+            {
+                "source": meta.get("source"),
+                "table": meta.get("table"),
+                "pk": meta.get("pk"),
+                "score": r.get("score"),
+                "title": meta.get("title") or meta.get("Name") or meta.get("TrackId"),
+            }
+        )
+
+    yield ("start", {
+        "trace_id": trace_id,
+        "citations": citations,
+        "context_count": len(contexts),
+    })
+
+    t_llm_start = time.perf_counter()
+    usage_dict: Optional[Dict[str, Any]] = None
+    ttfb_s: Optional[float] = None
+
+    for item in stream_answer_chunks(prompt, settings=s):
+        if isinstance(item, str):
+            yield ("chunk", {"content": item})
+        else:
+            _, usage_dict, ttfb_s = item
+            break
+
+    t_llm_total_s = time.perf_counter() - t_llm_start
+    t_post_start = time.perf_counter()
+    t_postprocess_s = time.perf_counter() - t_post_start
+
+    performance_metrics = {
+        "t_embed_query_s": retrieval_metrics.get("t_embed_query_s", 0.0),
+        "t_retrieve_s": retrieval_metrics.get("t_retrieve_s", 0.0),
+        "t_rerank_s": retrieval_metrics.get("t_rerank_s"),
+        "t_prompt_build_s": t_prompt_build_s,
+        "t_llm_first_token_s": ttfb_s,
+        "t_llm_total_s": t_llm_total_s,
+        "t_postprocess_s": t_postprocess_s,
+        "query_length_chars": retrieval_metrics.get("query_length_chars", len(question)),
+        "context_count": retrieval_metrics.get("context_count", len(contexts)),
+        "prompt_length_chars": len(prompt),
+        "prompt_tokens": usage_dict.get("prompt_tokens") if usage_dict else None,
+        "completion_tokens": usage_dict.get("completion_tokens") if usage_dict else None,
+        "total_tokens": usage_dict.get("total_tokens") if usage_dict else None,
+    }
+
+    yield ("done", {"performance_metrics": performance_metrics})
 

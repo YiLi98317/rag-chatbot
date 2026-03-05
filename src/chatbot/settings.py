@@ -121,8 +121,8 @@ def get_settings() -> Settings:
         or (os.getenv("QDRANT_COLLECTION") or "").strip()
         or "chatbot_docs"
     )
-    # Prefer TOP_K_DEFAULT but keep TOP_K for backward compatibility
-    default_top_k = _int_env("TOP_K_DEFAULT", os.getenv("TOP_K", "10") or "10")
+    # Prefer TOP_K_DEFAULT but keep TOP_K for backward compatibility (default 5 for lower latency)
+    default_top_k = _int_env("TOP_K_DEFAULT", os.getenv("TOP_K", "5") or "5")
 
     embed_dim: Optional[int] = None
     raw_dim = (os.getenv("EMBED_DIM") or "").strip()
@@ -187,13 +187,13 @@ def get_settings() -> Settings:
 
     llm_temperature = _float_env("LLM_TEMPERATURE", "0.3")
     llm_request_timeout_s = _int_env("LLM_REQUEST_TIMEOUT_S", "120")
-    llm_max_tokens: Optional[int] = None
-    raw_max_tokens = (os.getenv("LLM_MAX_TOKENS") or "").strip()
+    llm_max_tokens: Optional[int] = 250  # default cap on answer length (tokens)
+    raw_max_tokens = (os.getenv("LLM_MAX_TOKENS") or os.getenv("MAX_TOKEN") or "").strip()
     if raw_max_tokens:
         try:
             llm_max_tokens = int(raw_max_tokens)
         except Exception:
-            llm_max_tokens = None
+            llm_max_tokens = 250
 
     llm_planner_temperature = _float_env("LLM_PLANNER_TEMPERATURE", "0.1")
     llm_planner_max_tokens = _int_env("LLM_PLANNER_MAX_TOKENS", "256")
