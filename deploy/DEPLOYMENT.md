@@ -58,8 +58,11 @@ Go to your GitHub repository: **Settings → Secrets and variables → Actions �
 - **CHAT_MODEL** = `deepseek-r1` (default)
 - **TOP_K_DEFAULT** = `10` (default)
 - **DEBUG_TRACES** = `0` (default)
+- **ENABLE_QUERY_PLANNER** = `true` (default). Set to `false` to skip the query-planner LLM call and use a deterministic plan instead; typically saves ~8–12 seconds per query when using DeepSeek (one fewer API round trip).
 
 **Note**: If you don't set the application secrets, the workflow will use the defaults listed above.
+
+**Query latency**: Each query does two sequential DeepSeek API calls by default: (1) query planner (intent/rewriting), (2) answer generation. Total time is often ~20–25 seconds. To reduce latency, set `ENABLE_QUERY_PLANNER=false` so only the answer call is made; retrieval then uses a deterministic plan (no LLM). The API logs `qa_latency` with `retrieval_s` and `llm_s` so you can see where time is spent.
 
 ### Step 4: Configure Firewall/Security Group
 

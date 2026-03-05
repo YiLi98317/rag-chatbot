@@ -29,7 +29,9 @@ def retrieve_top_k(
     db_uri: Optional[str] = None,
     debug: bool = False,
     filters_override: Optional[Dict[str, Any]] = None,
+    out_metrics: Optional[Dict[str, Any]] = None,
 ) -> List[Dict]:
+    t_retrieval_start = time.perf_counter()
     # 0) Query Planner
     try:
         from chatbot.config import get_settings
@@ -259,6 +261,12 @@ def retrieve_top_k(
                                 print(f"QEXP_FALLBACK_USED: {len(qexp_hits)} hits")
                             if recorder is not None:
                                 recorder.end_and_write()
+                            if out_metrics is not None:
+                                out_metrics["t_embed_query_s"] = 0.0
+                                out_metrics["t_retrieve_s"] = time.perf_counter() - t_retrieval_start
+                                out_metrics["t_rerank_s"] = 0.0
+                                out_metrics["context_count"] = len(qexp_hits[:top_k])
+                                out_metrics["query_length_chars"] = len(query)
                             return qexp_hits[:top_k]
                     except Exception as e:
                         if debug:
@@ -304,6 +312,12 @@ def retrieve_top_k(
                                 if k in row:
                                     metadata[k] = row[k]
                         results.append({"text": text_val, "score": float(h.get("final", 0.0)), "metadata": metadata})
+                if out_metrics is not None:
+                    out_metrics["t_embed_query_s"] = 0.0
+                    out_metrics["t_retrieve_s"] = time.perf_counter() - t_retrieval_start
+                    out_metrics["t_rerank_s"] = 0.0
+                    out_metrics["context_count"] = len(results)
+                    out_metrics["query_length_chars"] = len(query)
                 return results
             elif decision == "medium" and hits:
                 used_lexical = True
@@ -315,7 +329,7 @@ def retrieve_top_k(
                 for s in suggestions:
                     summary_lines.append(f"{s['entity_type']} {s['name']} (id={s['entity_id']})")
                 summary_text = "Close matches found:\n" + "\n".join(f"- {x}" for x in summary_lines)
-                return [
+                out_list = [
                     {
                         "text": summary_text,
                         "score": float(suggestions[0].get("final", 0.0)),
@@ -325,6 +339,13 @@ def retrieve_top_k(
                         },
                     }
                 ]
+                if out_metrics is not None:
+                    out_metrics["t_embed_query_s"] = 0.0
+                    out_metrics["t_retrieve_s"] = time.perf_counter() - t_retrieval_start
+                    out_metrics["t_rerank_s"] = 0.0
+                    out_metrics["context_count"] = len(out_list)
+                    out_metrics["query_length_chars"] = len(query)
+                return out_list
             else:
                 if debug:
                     print("LEXICAL_DECISION: used_resolver=false level=low fallback_qdrant=true")
@@ -354,7 +375,7 @@ def retrieve_top_k(
         except Exception:
             pass
 
-    t_vec_start = time.time()
+    t_embed_start = time.perf_counter()
     provider = "ollama"
     try:
         if settings and getattr(settings, "embed_provider", None):
@@ -367,6 +388,10 @@ def retrieve_top_k(
         model=embed_model,
         ollama_base_url=ollama_base_url,
     )
+    t_embed_end = time.perf_counter()
+    if out_metrics is not None:
+        out_metrics["t_embed_query_s"] = t_embed_end - t_embed_start
+        out_metrics["query_length_chars"] = len(semantic_query)
 
     # 2) Log B — embedding vector sanity
     if debug:
@@ -440,12 +465,16 @@ def retrieve_top_k(
             filters=retry_filters,
             debug=debug,
         )
-    t_vec_end = time.time()
+    t_retrieve_end = time.perf_counter()
+    if out_metrics is not None:
+        t_retrieve_start = t_embed_end
+        out_metrics["t_retrieve_s"] = t_retrieve_end - t_retrieve_start
+        out_metrics["t_rerank_s"] = 0.0
     if recorder is not None:
         recorder.record_level(
             level="L4_VECTOR",
-            t_start=t_vec_start,
-            t_end=t_vec_end,
+            t_start=t_embed_start,
+            t_end=t_retrieve_end,
             candidates_out=len(scored) if hasattr(scored, "__len__") else 0,
         )
 
@@ -513,6 +542,8 @@ def retrieve_top_k(
                     },
                 }
             ]
+            if out_metrics is not None:
+                out_metrics["context_count"] = len(out)
             if recorder is not None:
                 recorder.end_and_write()
             return out
@@ -528,6 +559,8 @@ def retrieve_top_k(
                 "metadata": getattr(sp, "metadata", {}) or {},
             }
         )
+    if out_metrics is not None:
+        out_metrics["context_count"] = len(results)
     if recorder is not None:
         recorder.end_and_write()
     return results

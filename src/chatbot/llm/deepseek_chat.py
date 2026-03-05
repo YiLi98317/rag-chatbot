@@ -82,5 +82,25 @@ def generate_text(
         content = None
     if not isinstance(content, str) or not content.strip():
         raise RuntimeError(f"Unexpected DeepSeek response shape: {data}")
-    return content
+
+    usage: Optional[Dict[str, Any]] = None
+    try:
+        u = data.get("usage")
+        if isinstance(u, dict):
+            pt = u.get("prompt_tokens")
+            ct = u.get("completion_tokens")
+            prompt_tokens = int(pt) if pt is not None else None
+            completion_tokens = int(ct) if ct is not None else None
+            total_tokens = (prompt_tokens + completion_tokens) if (prompt_tokens is not None and completion_tokens is not None) else u.get("total_tokens")
+            if total_tokens is not None:
+                total_tokens = int(total_tokens)
+            usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            }
+    except (TypeError, KeyError, ValueError):
+        usage = None
+
+    return content, usage
 

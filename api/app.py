@@ -18,7 +18,7 @@ from chatbot.service.qa_service import answer_question
 from chatbot.settings import get_settings
 from chatbot.vectorstore import get_vector_store
 
-from api.models import QaRequest, QaResponse
+from api.models import PerformanceMetrics, QaRequest, QaResponse
 
 
 logger = get_logger("chatbot.api")
@@ -89,6 +89,7 @@ def qa(req: QaRequest):
             citations=result.citations,  # pydantic will coerce dict->Citation
             trace_id=result.trace_id,
             retrieval=result.retrieval if debug_traces else None,
+            performance_metrics=PerformanceMetrics(**result.performance_metrics) if result.performance_metrics else None,
         )
     except Exception as e:
         logger.exception("qa_error")
