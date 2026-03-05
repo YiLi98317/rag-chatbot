@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Iterable, List, Sequence
+from typing import List, Sequence
 
 import requests
+
+_session = requests.Session()
 
 
 def _embeddings_endpoint(base_url: str) -> str:
@@ -10,7 +12,7 @@ def _embeddings_endpoint(base_url: str) -> str:
 
 
 def embed_text(text: str, model: str, base_url: str) -> List[float]:
-    resp = requests.post(
+    resp = _session.post(
         _embeddings_endpoint(base_url),
         json={"model": model, "prompt": text},
         timeout=120,

@@ -155,6 +155,40 @@ curl http://localhost:8000/healthz
 curl http://localhost:8000/readyz
 ```
 
+### GPU-accelerated inference (Docker)
+
+The `docker-compose.yml` Ollama service is configured for NVIDIA GPU passthrough (used for chat models like `deepseek-r1`). Embeddings run via SentenceTransformers (`BAAI/bge-m3`) and will also benefit from GPU if PyTorch+CUDA is available in the API container.
+
+**Host prerequisites:**
+
+```bash
+# 1. Verify GPU is visible
+nvidia-smi
+
+# 2. Install NVIDIA container toolkit (if not already)
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+
+# 3. Verify Docker GPU access
+docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+```
+
+**After `docker compose up -d`:**
+
+```bash
+# Verify Ollama GPU usage (for chat model)
+watch -n 0.5 nvidia-smi
+```
+
+**Embedding benchmark:**
+
+```bash
+python scripts/bench_embed.py
+# Target: avg < 0.8s (down from ~5.5s on CPU)
+# Override provider/model: --provider sentence_transformers --model BAAI/bge-m3
+```
+
 ### K8s (local cluster)
 
 See `deploy/README.md`.

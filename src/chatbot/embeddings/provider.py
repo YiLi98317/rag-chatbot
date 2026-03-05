@@ -1,9 +1,38 @@
 from __future__ import annotations
 
-from typing import List, Sequence
+from functools import lru_cache
+from typing import List, Sequence, Tuple
 
 from .ollama import embed_text as ollama_embed_text
 from .ollama import embed_texts as ollama_embed_texts
+
+
+def _raw_embed_text(
+    text: str,
+    provider: str,
+    model: str,
+    ollama_base_url: str,
+) -> List[float]:
+    p = (provider or "ollama").strip().lower()
+    if p == "sentence_transformers":
+        try:
+            from .st_embedder import embed_text as st_embed_text
+        except Exception as e:
+            raise RuntimeError(
+                "EMBED_PROVIDER=sentence_transformers but dependencies are not installed. "
+                "Run: make install (or: .venv/bin/pip install -r requirements.txt). "
+                f"Import error: {type(e).__name__}: {e}"
+            ) from e
+
+        return st_embed_text(text, model_name=model)
+    return ollama_embed_text(text, model=model, base_url=ollama_base_url)
+
+
+@lru_cache(maxsize=1024)
+def _cached_embed(
+    text: str, provider: str, model: str, ollama_base_url: str
+) -> Tuple[float, ...]:
+    return tuple(_raw_embed_text(text, provider, model, ollama_base_url))
 
 
 def embed_texts(
@@ -42,17 +71,5 @@ def embed_text(
     model: str,
     ollama_base_url: str,
 ) -> List[float]:
-    p = (provider or "ollama").strip().lower()
-    if p == "sentence_transformers":
-        try:
-            from .st_embedder import embed_text as st_embed_text
-        except Exception as e:
-            raise RuntimeError(
-                "EMBED_PROVIDER=sentence_transformers but dependencies are not installed. "
-                "Run: make install (or: .venv/bin/pip install -r requirements.txt). "
-                f"Import error: {type(e).__name__}: {e}"
-            ) from e
-
-        return st_embed_text(text, model_name=model)
-    return ollama_embed_text(text, model=model, base_url=ollama_base_url)
+    return list(_cached_embed(text, provider, model, ollama_base_url))
 

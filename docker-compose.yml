@@ -47,12 +47,22 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    restart: unless-stopped
     ports:
       - "11434:11434"
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   api:
     build: .
@@ -70,7 +80,7 @@ services:
       MILVUS_COLLECTION: chatbot_docs
       # Ollama runs as a docker-compose service on the same network.
       OLLAMA_BASE_URL: http://ollama:11434
-      # Embeddings run locally in the API container (SentenceTransformers + HF).
+      # Embeddings run locally in the API container (SentenceTransformers + BAAI/bge-m3).
       EMBED_PROVIDER: sentence_transformers
       EMBED_MODEL: BAAI/bge-m3
       # Chat runs via Ollama (ensure model exists in Ollama: `ollama pull deepseek-r1`).
