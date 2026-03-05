@@ -140,6 +140,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           password: ${{ secrets.ECS_PASSWORD }}
           envs: GHCR_TOKEN
+          command_timeout: 30m
           script: |
             cd /opt/rag
             COMPOSE_FILE="/opt/rag/docker-compose.yml"
@@ -161,7 +162,7 @@ jobs:
             # Convert repository to lowercase for image pull (Docker requirement)
             REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
             API_IMAGE="ghcr.io/${REPO_LOWER}:latest"
-            echo "Pulling ${API_IMAGE}... (heartbeat every 30s with download progress)"
+            echo "Pulling ${API_IMAGE}... (heartbeat every 30s with layer progress)"
             # Verify the image name in docker-compose matches
             COMPOSE_IMAGE=$(grep "image:" "$COMPOSE_FILE" | grep "api" -A 1 | grep "image:" | sed 's/.*image: *//' | head -1)
             echo "Docker-compose expects image: ${COMPOSE_IMAGE}"
@@ -174,8 +175,16 @@ jobs:
               while kill -0 $PULL_PID 2>/dev/null; do
                 sleep 30
                 ELAPSED=$((ELAPSED + 30))
-                PROGRESS=$(tail -1 "$PULL_LOG" 2>/dev/null | sed 's/^[[:space:]]*//' | head -c 120)
-                echo "[heartbeat] ${ELAPSED}s elapsed | latest: ${PROGRESS:-pull in progress...}"
+                # Compute simple layer progress since docker pull output in this environment
+                # does not include byte sizes like 1.2GB/4.4GB.
+                TOTAL_LAYERS=$(grep -c "Pulling fs layer" "$PULL_LOG" 2>/dev/null || echo 0)
+                COMPLETED_LAYERS=$(grep -c "Pull complete" "$PULL_LOG" 2>/dev/null || echo 0)
+                LAST_LINE=$(tail -1 "$PULL_LOG" 2>/dev/null | sed 's/^[[:space:]]*//' | head -c 120)
+                if [ "$TOTAL_LAYERS" -gt 0 ]; then
+                  echo "[heartbeat] ${ELAPSED}s elapsed | layers: ${COMPLETED_LAYERS}/${TOTAL_LAYERS} | latest: ${LAST_LINE}"
+                else
+                  echo "[heartbeat] ${ELAPSED}s elapsed | latest: ${LAST_LINE:-pull in progress...}"
+                fi
               done
               wait $PULL_PID
               PULL_EXIT=$?
