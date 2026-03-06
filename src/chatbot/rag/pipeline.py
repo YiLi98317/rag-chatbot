@@ -42,31 +42,17 @@ def build_prompt(
     context_block = _format_contexts_numbered(contexts)
     lang = detect_lang(question)
     if lang == "en":
-        lang_rule = "Answer in English."
+        lang_rule = "- Answer in English.\n"
     elif lang == "zh":
-        lang_rule = "Answer in Chinese."
+        lang_rule = "- 请用中文回答。\n"
     else:
-        lang_rule = "If the question mixes English and Chinese, prefer Chinese in the answer."
+        lang_rule = "- 中英混合问题请优先用中文回答。\n"
 
-    grounding_rules = (
-        "SYSTEM_GROUNDING_RULES:\n"
-        "- You MUST answer using ONLY the provided CONTEXT.\n"
-        "- If CONTEXT contains a general process/workflow relevant to the question, you MUST provide that process as numbered steps.\n"
-        "- If the question is about a specific model/version but CONTEXT only has general process, answer with the general process and explicitly note which model-specific details are missing.\n"
-        "- If the question asks for a specific model/version/condition but CONTEXT only has general info, clearly state what specific details are missing.\n"
-        "- Only if CONTEXT is truly irrelevant or missing (no relevant general process and no relevant facts), say: \"我在现有资料中没有看到相关信息\" and ask ONE follow-up question.\n"
-        "- Do NOT fabricate product features, steps, prices, policies, or any official claims.\n"
-        f"- {lang_rule}\n"
-    )
+    persona_block = f"SYSTEM:\n{persona_text}{lang_rule}" if persona_text else f"SYSTEM:\n{lang_rule}"
 
     if debug:
-        # Debug mode: force a consistent, inspectable format (DebugAnswer/Evidence/Next step questions).
-        instructions = (
-            "SYSTEM:\n"
-            "You are a helpful assistant.\n"
-            "- Always be truthful and grounded.\n"
-            "- If CONTEXT is insufficient, say what is missing and ask ONE follow-up question.\n\n"
-            "Output format:\n"
+        debug_format = (
+            "\nOutput format:\n"
             "DebugAnswer: (1-5 sentences)\n"
             "Evidence: quote up to 3 short snippets from the Context (or say 'None' if truly missing)\n"
             "Next step questions: ask exactly ONE question to proceed\n"
@@ -75,25 +61,14 @@ def build_prompt(
             "- Do NOT output multiple answers.\n"
             "- Evidence MUST be verbatim quotes copied from CONTEXT and MUST include the context item index like [1] or [2].\n"
         )
-        persona_block = f"SYSTEM_PERSONA:\n{persona_text}\n" if persona_text else ""
         return (
-            f"{persona_block}{grounding_rules}\n"
-            f"{instructions}\n"
+            f"{persona_block}{debug_format}\n"
             f"CONTEXT:\n{context_block}\n\n"
             f"QUESTION: {question}\n"
         )
 
-    # Normal mode: answer naturally; if insufficient context, ask a single follow-up question.
-    persona_block = f"SYSTEM_PERSONA:\n{persona_text}\n" if persona_text else ""
-    instructions = (
-        "SYSTEM:\n"
-        "You are a helpful assistant.\n"
-        "- Provide clear, actionable steps when possible.\n"
-        "- If the context is insufficient, be honest and ask ONE follow-up question to proceed.\n"
-    )
     return (
-        f"{persona_block}{grounding_rules}\n"
-        f"{instructions}\n"
+        f"{persona_block}\n"
         f"CONTEXT:\n{context_block}\n\n"
         f"QUESTION: {question}\n"
         "ANSWER:"

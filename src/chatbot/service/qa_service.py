@@ -92,7 +92,9 @@ def answer_question(
         )
     t_postprocess_s = time.perf_counter() - t_post_start
 
+    t_query_plan_s = retrieval_metrics.get("t_query_plan_s", 0.0)
     performance_metrics: Optional[Dict[str, Any]] = {
+        "t_query_plan_s": t_query_plan_s,
         "t_embed_query_s": retrieval_metrics.get("t_embed_query_s", 0.0),
         "t_retrieve_s": retrieval_metrics.get("t_retrieve_s", 0.0),
         "t_rerank_s": retrieval_metrics.get("t_rerank_s"),
@@ -109,11 +111,12 @@ def answer_question(
     }
 
     logger.info(
-        "qa_latency trace_id=%s retrieval_s=%.2f llm_s=%.2f total_s=%.2f",
+        "qa_latency trace_id=%s plan_s=%.2f retrieval_s=%.2f llm_s=%.2f total_s=%.2f",
         trace_id,
+        t_query_plan_s,
         retrieval_metrics.get("t_embed_query_s", 0) + retrieval_metrics.get("t_retrieve_s", 0),
         t_llm_total_s,
-        retrieval_metrics.get("t_embed_query_s", 0) + retrieval_metrics.get("t_retrieve_s", 0) + t_llm_total_s + t_prompt_build_s + t_postprocess_s,
+        t_query_plan_s + retrieval_metrics.get("t_embed_query_s", 0) + retrieval_metrics.get("t_retrieve_s", 0) + t_llm_total_s + t_prompt_build_s + t_postprocess_s,
     )
 
     retrieval_debug: Optional[Dict[str, Any]] = None
@@ -219,6 +222,7 @@ def answer_question_stream(
     t_postprocess_s = time.perf_counter() - t_post_start
 
     performance_metrics = {
+        "t_query_plan_s": retrieval_metrics.get("t_query_plan_s", 0.0),
         "t_embed_query_s": retrieval_metrics.get("t_embed_query_s", 0.0),
         "t_retrieve_s": retrieval_metrics.get("t_retrieve_s", 0.0),
         "t_rerank_s": retrieval_metrics.get("t_rerank_s"),

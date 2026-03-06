@@ -71,6 +71,7 @@ def retrieve_top_k(
                 print("  ollama_base_url:", getattr(settings, "ollama_base_url", ""))
         except Exception:
             pass
+    t_plan_start = time.perf_counter()
     if settings:
         plan: QueryPlan = plan_query(
             raw_query=query,
@@ -81,6 +82,9 @@ def retrieve_top_k(
         )
     else:
         plan = deterministic_fallback_plan(query, supported_tables)
+    t_query_plan_s = time.perf_counter() - t_plan_start
+    if out_metrics is not None:
+        out_metrics["t_query_plan_s"] = t_query_plan_s
     if debug:
         try:
             print("QUERY_PLAN:")
