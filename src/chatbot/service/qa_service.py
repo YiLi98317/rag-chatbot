@@ -94,6 +94,7 @@ def answer_question(
 
     t_query_plan_s = retrieval_metrics.get("t_query_plan_s", 0.0)
     performance_metrics: Optional[Dict[str, Any]] = {
+        "planner_skipped": retrieval_metrics.get("planner_skipped", False),
         "t_query_plan_s": t_query_plan_s,
         "t_embed_query_s": retrieval_metrics.get("t_embed_query_s", 0.0),
         "t_retrieve_s": retrieval_metrics.get("t_retrieve_s", 0.0),
@@ -222,6 +223,7 @@ def answer_question_stream(
     t_postprocess_s = time.perf_counter() - t_post_start
 
     performance_metrics = {
+        "planner_skipped": retrieval_metrics.get("planner_skipped", False),
         "t_query_plan_s": retrieval_metrics.get("t_query_plan_s", 0.0),
         "t_embed_query_s": retrieval_metrics.get("t_embed_query_s", 0.0),
         "t_retrieve_s": retrieval_metrics.get("t_retrieve_s", 0.0),

@@ -71,6 +71,88 @@ def retrieve_top_k(
                 print("  ollama_base_url:", getattr(settings, "ollama_base_url", ""))
         except Exception:
             pass
+    # --- Adaptive planner: speculative first pass (always on when LLM planner would run) ---
+    # Try a quick vector search with a deterministic plan first.
+    # If the top result scores well, skip the expensive LLM planner entirely.
+    ADAPTIVE_SCORE_THRESHOLD = 0.5
+    if enable_planner and settings is not None:
+        t_adaptive_start = time.perf_counter()
+        det_plan = deterministic_fallback_plan(query, supported_tables)
+        spec_semantic = det_plan.vector_query or query
+
+        spec_provider = "ollama"
+        try:
+            if getattr(settings, "embed_provider", None):
+                spec_provider = str(settings.embed_provider)
+        except Exception:
+            spec_provider = "ollama"
+
+        t_spec_embed_start = time.perf_counter()
+        spec_vec = embed_text(
+            spec_semantic,
+            provider=spec_provider,
+            model=embed_model,
+            ollama_base_url=ollama_base_url,
+        )
+        t_spec_embed_end = time.perf_counter()
+
+        spec_filters: Optional[Dict[str, Any]] = None
+        try:
+            if query_lang == "en":
+                spec_filters = {"lang": ["en", "mixed"]}
+            elif query_lang == "zh":
+                spec_filters = {"lang": ["zh", "mixed"]}
+        except Exception:
+            pass
+        if filters_override and isinstance(filters_override, dict):
+            merged = dict(spec_filters or {})
+            for fk in ("table", "lang"):
+                fv = filters_override.get(fk)
+                if isinstance(fv, list) and fv:
+                    merged[fk] = fv
+            spec_filters = merged or spec_filters
+
+        spec_scored = store.search(
+            collection=collection,
+            vector=spec_vec,
+            top_k=max(top_k, 10),
+            filters=spec_filters,
+            debug=False,
+        )
+        t_spec_retrieve_end = time.perf_counter()
+
+        top_score = float(getattr(spec_scored[0], "score", 0.0)) if spec_scored else 0.0
+        if debug:
+            print(f"ADAPTIVE_PLANNER: top_score={top_score:.4f} threshold={ADAPTIVE_SCORE_THRESHOLD}")
+
+        if top_score >= ADAPTIVE_SCORE_THRESHOLD:
+            if debug:
+                print("ADAPTIVE_PLANNER: HIT — skipping LLM planner")
+            if out_metrics is not None:
+                out_metrics["t_query_plan_s"] = time.perf_counter() - t_adaptive_start
+                out_metrics["t_embed_query_s"] = t_spec_embed_end - t_spec_embed_start
+                out_metrics["t_retrieve_s"] = t_spec_retrieve_end - t_spec_embed_end
+                out_metrics["t_rerank_s"] = 0.0
+                out_metrics["planner_skipped"] = True
+                out_metrics["query_length_chars"] = len(spec_semantic)
+            results: List[Dict] = []
+            for sp in (spec_scored or [])[:top_k]:
+                results.append(
+                    {
+                        "text": getattr(sp, "text", "") or "",
+                        "score": float(getattr(sp, "score", 0.0)),
+                        "metadata": getattr(sp, "metadata", {}) or {},
+                    }
+                )
+            if out_metrics is not None:
+                out_metrics["context_count"] = len(results)
+            if recorder is not None:
+                recorder.end_and_write()
+            return results
+        else:
+            if debug:
+                print("ADAPTIVE_PLANNER: MISS — falling through to LLM planner")
+
     t_plan_start = time.perf_counter()
     if settings:
         plan: QueryPlan = plan_query(
@@ -269,6 +351,7 @@ def retrieve_top_k(
                                 out_metrics["t_embed_query_s"] = 0.0
                                 out_metrics["t_retrieve_s"] = time.perf_counter() - t_retrieval_start
                                 out_metrics["t_rerank_s"] = 0.0
+                                out_metrics["planner_skipped"] = False
                                 out_metrics["context_count"] = len(qexp_hits[:top_k])
                                 out_metrics["query_length_chars"] = len(query)
                             return qexp_hits[:top_k]
@@ -320,6 +403,7 @@ def retrieve_top_k(
                     out_metrics["t_embed_query_s"] = 0.0
                     out_metrics["t_retrieve_s"] = time.perf_counter() - t_retrieval_start
                     out_metrics["t_rerank_s"] = 0.0
+                    out_metrics["planner_skipped"] = False
                     out_metrics["context_count"] = len(results)
                     out_metrics["query_length_chars"] = len(query)
                 return results
@@ -347,6 +431,7 @@ def retrieve_top_k(
                     out_metrics["t_embed_query_s"] = 0.0
                     out_metrics["t_retrieve_s"] = time.perf_counter() - t_retrieval_start
                     out_metrics["t_rerank_s"] = 0.0
+                    out_metrics["planner_skipped"] = False
                     out_metrics["context_count"] = len(out_list)
                     out_metrics["query_length_chars"] = len(query)
                 return out_list
@@ -474,6 +559,7 @@ def retrieve_top_k(
         t_retrieve_start = t_embed_end
         out_metrics["t_retrieve_s"] = t_retrieve_end - t_retrieve_start
         out_metrics["t_rerank_s"] = 0.0
+        out_metrics["planner_skipped"] = False
     if recorder is not None:
         recorder.record_level(
             level="L4_VECTOR",

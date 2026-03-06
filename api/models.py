@@ -23,6 +23,7 @@ class Citation(BaseModel):
 class PerformanceMetrics(BaseModel):
     """Per-stage timings and counts for the RAG pipeline."""
 
+    planner_skipped: bool = False
     t_query_plan_s: float = 0.0
     t_embed_query_s: float = 0.0
     t_retrieve_s: float = 0.0
