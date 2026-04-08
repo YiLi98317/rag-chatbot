@@ -11,10 +11,10 @@
 - **语言/运行时**：Python 3.10+（venv）
 - **CLI**：Typer + Rich
 - **API**：FastAPI + Uvicorn
-- **向量数据库**：Milvus（通过 `pymilvus` 自托管）*（Qdrant 作为可选备用方案）*
+- **向量数据库**：Milvus（通过 `pymilvus` 自托管）_（Qdrant 作为可选备用方案）_
 - **模型**：
-  - **Embeddings**：SentenceTransformers（`BAAI/bge-m3`，默认）*或* Ollama HTTP API（`POST /api/embeddings`）
-  - **生成**：DeepSeek API（兼容 OpenAI 接口，默认）*或* Ollama HTTP API（`POST /api/generate`）
+  - **Embeddings**：SentenceTransformers（`BAAI/bge-m3`，默认）_或_ Ollama HTTP API（`POST /api/embeddings`）
+  - **生成**：DeepSeek API（兼容 OpenAI 接口，默认）_或_ Ollama HTTP API（`POST /api/generate`）
 - **SQL**：SQLAlchemy（默认 SQLite；通过 PyMySQL 支持 MySQL）
 - **词汇匹配**：SQLite FTS5 + RapidFuzz
 - **工具库**：requests、tqdm、python-dotenv
@@ -42,12 +42,12 @@ cp .env.example .env
 关键变量（完整列表请参阅 `.env.example`）：
 
 - `VECTOR_PROVIDER=milvus`
-- `MILVUS_LITE_DB=./milvus.db` *（Milvus Lite 嵌入模式 — 本地开发无需 Docker）*
-  - 或 `MILVUS_URI=http://localhost:19530` *（Milvus 服务端 — 用于部署环境）*
+- `MILVUS_LITE_DB=./milvus.db` _（Milvus Lite 嵌入模式 — 本地开发无需 Docker）_
+  - 或 `MILVUS_URI=http://localhost:19530` _（Milvus 服务端 — 用于部署环境）_
 - `MILVUS_DB=default`
 - `MILVUS_COLLECTION=chatbot_docs`
 - `LLM_PROVIDER=deepseek`（或 `ollama` 用于本地推理）
-- `API_KEY=sk-...` *（DeepSeek API 密钥；当 `LLM_PROVIDER=deepseek` 时必填）*
+- `API_KEY=sk-...` _（DeepSeek API 密钥；当 `LLM_PROVIDER=deepseek` 时必填）_
 - `API_BASE_URL=https://api.deepseek.com`
 - `MODEL_NAME=deepseek-chat`
 - `EMBED_PROVIDER=sentence_transformers`（或 `ollama`）
@@ -79,9 +79,9 @@ cp .env.example .env
 
 ECS 部署（远程导入和 `deploy` 工作流所需）：
 
-- `ECS_HOST=<你的 ECS IP>` *（ECS 服务器 IP 或主机名）*
-- `ECS_USER=root` *（SSH 用户）*
-- `ECS_PASSWORD=<你的密码>` *（SSH 密码）*
+- `ECS_HOST=<你的 ECS IP>` _（ECS 服务器 IP 或主机名）_
+- `ECS_USER=root` _（SSH 用户）_
+- `ECS_PASSWORD=<你的密码>` _（SSH 密码）_
 
 2. 安装依赖：
 
@@ -148,6 +148,40 @@ DATA_DIR=data/target make ingest collection=chatbot_docs
 ```
 
 选项：`--chunk-size`、`--chunk-overlap`、`--embed-batch-size`、`--recreate`、`--batch-size`。
+
+#### 七鱼客服数据导入
+
+使用 `reingest_qiyu.py` 导入网易七鱼导出的客服聊天记录（预处理后的 16 列 xlsx 格式）。
+
+脚本会自动清洗会话内容中的 JSON 系统消息、评价弹窗、转接提示、纯 URL 等噪音，并输出两种文档：
+- **知识库文档（knowledge）**：提取客服回复中的业务知识
+- **对话文档（conversation）**：保留完整的用户-客服对话上下文
+
+```bash
+# 单文件导入（全量重建，限制 1000 条测试）
+python reingest_qiyu.py \
+  --xlsx data/shangwu11to03.xlsx \
+  --collection chatbot_docs \
+  --mode both \
+  --recreate \
+  --max-sessions 1000 \
+  --min-rounds 2
+
+# 批量导入目录下所有 xlsx
+python reingest_qiyu.py \
+  --data-dir data/ \
+  --collection chatbot_docs \
+  --mode both \
+  --recreate
+
+# 增量导入新数据
+python reingest_qiyu.py \
+  --xlsx data/new_export.xlsx \
+  --collection chatbot_docs \
+  --mode both
+```
+
+选项：`--mode`（knowledge/conversation/both）、`--min-rounds`（过滤低质量会话）、`--max-sessions`（限制数量）、`--recreate`、`--chunk-size`、`--chunk-overlap`。
 
 #### 部署：远程导入
 
@@ -245,21 +279,49 @@ GitHub Actions 工作流位于 `.github/workflows/`：
 
 CI/CD 工作流需要以下密钥（Settings → Secrets and variables → Actions）：
 
-| 密钥 | `.env.example` 变量 | 说明 |
-|---|---|---|
-| `API_BASE_URL` | `API_BASE_URL` | DeepSeek API 端点 |
-| `API_KEY` | `API_KEY` | DeepSeek API 密钥 |
-| `CHAT_MODEL` | `CHAT_MODEL` | LLM 聊天模型名称（Ollama） |
-| `ECS_HOST` | `ECS_HOST` | ECS 服务器 IP 或主机名 |
-| `ECS_PASSWORD` | `ECS_PASSWORD` | ECS SSH 密码 |
-| `ECS_USER` | `ECS_USER` | ECS SSH 用户 |
-| `EMBED_MODEL` | `EMBED_MODEL` | Embedding 模型名称 |
-| `EMBED_PROVIDER` | `EMBED_PROVIDER` | Embedding 提供商（`sentence_transformers` / `ollama`） |
-| `GHCR_TOKEN` | *（无）* | GitHub Container Registry 个人访问令牌（需 `write:packages` 权限） |
-| `LLM_PROVIDER` | `LLM_PROVIDER` | LLM 提供商（`deepseek` / `ollama`） |
-| `MILVUS_COLLECTION` | `MILVUS_COLLECTION` | Milvus 集合名称 |
-| `MILVUS_DB` | `MILVUS_DB` | Milvus 数据库名称 |
-| `MILVUS_URI` | `MILVUS_URI` | Milvus 服务端 URI（部署环境） |
-| `MODEL_NAME` | `MODEL_NAME` | DeepSeek 模型名称 |
-| `OLLAMA_BASE_URL` | `OLLAMA_BASE_URL` | Ollama 服务器 URL |
-| `VECTOR_PROVIDER` | `VECTOR_PROVIDER` | 向量数据库提供商（`milvus` / `qdrant`） |
+| 密钥                | `.env.example` 变量 | 说明                                                               |
+| ------------------- | ------------------- | ------------------------------------------------------------------ |
+| `API_BASE_URL`      | `API_BASE_URL`      | DeepSeek API 端点                                                  |
+| `API_KEY`           | `API_KEY`           | DeepSeek API 密钥                                                  |
+| `CHAT_MODEL`        | `CHAT_MODEL`        | LLM 聊天模型名称（Ollama）                                         |
+| `ECS_HOST`          | `ECS_HOST`          | ECS 服务器 IP 或主机名                                             |
+| `ECS_PASSWORD`      | `ECS_PASSWORD`      | ECS SSH 密码                                                       |
+| `ECS_USER`          | `ECS_USER`          | ECS SSH 用户                                                       |
+| `EMBED_MODEL`       | `EMBED_MODEL`       | Embedding 模型名称                                                 |
+| `EMBED_PROVIDER`    | `EMBED_PROVIDER`    | Embedding 提供商（`sentence_transformers` / `ollama`）             |
+| `GHCR_TOKEN`        | _（无）_            | GitHub Container Registry 个人访问令牌（需 `write:packages` 权限） |
+| `LLM_PROVIDER`      | `LLM_PROVIDER`      | LLM 提供商（`deepseek` / `ollama`）                                |
+| `MILVUS_COLLECTION` | `MILVUS_COLLECTION` | Milvus 集合名称                                                    |
+| `MILVUS_DB`         | `MILVUS_DB`         | Milvus 数据库名称                                                  |
+| `MILVUS_URI`        | `MILVUS_URI`        | Milvus 服务端 URI（部署环境）                                      |
+| `MODEL_NAME`        | `MODEL_NAME`        | DeepSeek 模型名称                                                  |
+| `OLLAMA_BASE_URL`   | `OLLAMA_BASE_URL`   | Ollama 服务器 URL                                                  |
+| `VECTOR_PROVIDER`   | `VECTOR_PROVIDER`   | 向量数据库提供商（`milvus` / `qdrant`）                            |
+
+基本就是两个部分，一个是本地的ingest一个是deployment的ingest。现在的话两边用的都是milvus，local是milvus lite，deployment是milvus server。但是ingest步骤基本相似。
+
+对于local来说你需要把所有的文件放到data/target/里面，然后使用readme中local部分的command进行ingest，也就是你截图中第一个code block中的内容。但需要注意的是其中上面是recreate下面是增量更新，我现在其实全部使用的是recreate，因为文档很小。但以后随着文件增加，或者不对现有内容进行修改仅仅是添加的话可能增量更新更快速。repo里也有一些ingest脚本用于早期测试和ingest单个文件。
+例如python reingest_company_xlsx.py --xlsx data/target/company.xlsx --collection chatbot_docs
+我把俞提供给我的文件命名为company.xlsx然后使用这个脚本进行ingest。无论使用哪种方法都需要确保collection name和你的env对应。
+
+对于deployment来说流程和逻辑都基本相同。但多了一步上传，也就是把需要更新或添加的文件上传到deployment。你需要把文件放入local data/target/然后运行那个上传的bash脚本，也就是截图中第二个code block内的内容。最后在github workflow中手动trigger名为reingest ECS data的workflow就可以了。它的原理和local reingest基本相同，只是把它放到了git action以便自动运行。workflow默认为recreate，后期可能会需要选择为增量，这点和local相同。
+
+2026-10-05 to 2026-10-25 3620
+
+2026-10-26 to 2026-11-15 2618
+
+2026-11-16 to 2026-12-06 0739
+
+2026-11-16 to 2026-12-06 3604
+
+2026-12-07 to 2026-12-27 1600
+
+2025-12-28 to 2025-01-17 2597
+
+2025-01-18 to 2026-02-07 3587
+
+2026-02-08 to 2026-02-28 5704
+
+2026-03-01 to 2026-03-18 6576
+
+11-01 to 03-19  纯商务  5366
