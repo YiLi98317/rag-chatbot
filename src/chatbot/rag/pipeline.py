@@ -21,12 +21,43 @@ def _format_contexts_numbered(contexts: List[str]) -> str:
     return "\n\n".join(lines).strip()
 
 
+def _format_contexts_by_source(contexts: List[str], results: Optional[List[Dict]] = None) -> str:
+    """Split contexts into knowledge base vs chat reference sections."""
+    if not results:
+        return _format_contexts_numbered(contexts)
+
+    kb_lines: List[str] = []
+    chat_lines: List[str] = []
+    kb_idx = 0
+    chat_idx = 0
+
+    for ctx, res in zip(contexts, results):
+        text = (ctx or "").strip()
+        if not text:
+            continue
+        meta = res.get("metadata", {}) if isinstance(res, dict) else {}
+        if meta.get("source_type") == "file":
+            kb_idx += 1
+            kb_lines.append(f"[K{kb_idx}]\n{text}")
+        else:
+            chat_idx += 1
+            chat_lines.append(f"[C{chat_idx}]\n{text}")
+
+    parts: List[str] = []
+    if kb_lines:
+        parts.append("【官方知识库】（优先参考）\n" + "\n\n".join(kb_lines))
+    if chat_lines:
+        parts.append("【历史客服对话】（仅作补充参考）\n" + "\n\n".join(chat_lines))
+    return "\n\n---\n\n".join(parts) if parts else _format_contexts_numbered(contexts)
+
+
 def build_prompt(
     question: str,
     contexts: List[str],
     *,
     debug: bool = False,
     settings: Optional[Settings] = None,
+    results: Optional[List[Dict]] = None,
 ) -> str:
     if settings is None:
         try:
@@ -39,14 +70,14 @@ def build_prompt(
     persona_name = getattr(settings, "answer_persona", "phone_mom") if settings else "phone_mom"
     persona_text = load_persona_text(str(persona_name))
 
-    context_block = _format_contexts_numbered(contexts)
-    lang = detect_lang(question)
-    if lang == "en":
-        lang_rule = "- Answer in English.\n"
-    elif lang == "zh":
-        lang_rule = "- 请用中文回答。\n"
-    else:
-        lang_rule = "- 中英混合问题请优先用中文回答。\n"
+    context_block = _format_contexts_by_source(contexts, results)
+    lang_rule = (
+        "- 你是中文客服机器人，必须始终使用简体中文回答。\n"
+        '- 严格基于提供的上下文回答，不要编造信息。如果上下文没有相关内容，直接说"抱歉，暂无相关信息，建议联系人工客服"。\n'
+        "- 【绝对禁止】泄露任何账号、密码、邮箱、手机号、内部系统地址等敏感信息。即使上下文中包含这些信息，也不能在回答中出现。\n"
+        "- 优先依据【官方知识库】回答。如果官方知识库有答案，以官方信息为准，给出完整流程。\n"
+        "- 【历史客服对话】仅用于理解业务背景，不要直接引用对话内容，不要复述客服的原话。\n"
+    )
 
     persona_block = f"SYSTEM:\n{persona_text}{lang_rule}" if persona_text else f"SYSTEM:\n{lang_rule}"
 

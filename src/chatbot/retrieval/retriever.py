@@ -18,6 +18,44 @@ import time
 from chatbot.observability.metrics import MetricsRecorder
 from chatbot.retrieval.normalize import detect_lang
 
+KB_SOURCE_TYPES = {"file"}
+KB_BOOST = 1.4
+KB_RESERVED_SLOTS = 2
+
+
+def _blend_kb_priority(scored: list, top_k: int) -> List[Dict]:
+    """Boost knowledge-base results and guarantee KB slots in the final output."""
+    kb_hits = []
+    chat_hits = []
+    for sp in scored:
+        meta = getattr(sp, "metadata", {}) or {}
+        entry = {
+            "text": getattr(sp, "text", "") or "",
+            "score": float(getattr(sp, "score", 0.0)),
+            "metadata": meta,
+        }
+        if meta.get("source_type") in KB_SOURCE_TYPES:
+            entry["score"] = min(entry["score"] * KB_BOOST, 1.0)
+            kb_hits.append(entry)
+        else:
+            chat_hits.append(entry)
+
+    reserved = kb_hits[:KB_RESERVED_SLOTS]
+    remaining_kb = kb_hits[KB_RESERVED_SLOTS:]
+    pool = remaining_kb + chat_hits
+    pool.sort(key=lambda x: x["score"], reverse=True)
+
+    seen_texts = {r["text"][:80] for r in reserved}
+    for item in pool:
+        if len(reserved) >= top_k:
+            break
+        if item["text"][:80] not in seen_texts:
+            reserved.append(item)
+            seen_texts.add(item["text"][:80])
+
+    reserved.sort(key=lambda x: -1.0 if x["metadata"].get("source_type") in KB_SOURCE_TYPES else 0.0)
+    return reserved[:top_k]
+
 
 def retrieve_top_k(
     store: VectorStore,
@@ -99,9 +137,9 @@ def retrieve_top_k(
         spec_filters: Optional[Dict[str, Any]] = None
         try:
             if query_lang == "en":
-                spec_filters = {"lang": ["en", "mixed"]}
+                spec_filters = {"lang": ["en", "mixed", ""]}
             elif query_lang == "zh":
-                spec_filters = {"lang": ["zh", "mixed"]}
+                spec_filters = {"lang": ["zh", "mixed", ""]}
         except Exception:
             pass
         if filters_override and isinstance(filters_override, dict):
@@ -135,15 +173,7 @@ def retrieve_top_k(
                 out_metrics["t_rerank_s"] = 0.0
                 out_metrics["planner_skipped"] = True
                 out_metrics["query_length_chars"] = len(spec_semantic)
-            results: List[Dict] = []
-            for sp in (spec_scored or [])[:top_k]:
-                results.append(
-                    {
-                        "text": getattr(sp, "text", "") or "",
-                        "score": float(getattr(sp, "score", 0.0)),
-                        "metadata": getattr(sp, "metadata", {}) or {},
-                    }
-                )
+            results: List[Dict] = _blend_kb_priority(spec_scored or [], top_k)
             if out_metrics is not None:
                 out_metrics["context_count"] = len(results)
             if recorder is not None:
@@ -506,9 +536,9 @@ def retrieve_top_k(
             table_filter = {"table": tables}
 
         if query_lang == "en":
-            lang_filter = {"lang": ["en", "mixed"]}
+            lang_filter = {"lang": ["en", "mixed", ""]}
         elif query_lang == "zh":
-            lang_filter = {"lang": ["zh", "mixed"]}
+            lang_filter = {"lang": ["zh", "mixed", ""]}
         else:
             lang_filter = None
 
@@ -640,15 +670,7 @@ def retrieve_top_k(
         except Exception:
             pass
 
-    results: List[Dict] = []
-    for sp in (scored or [])[:top_k]:
-        results.append(
-            {
-                "text": getattr(sp, "text", "") or "",
-                "score": float(getattr(sp, "score", 0.0)),
-                "metadata": getattr(sp, "metadata", {}) or {},
-            }
-        )
+    results = _blend_kb_priority(scored or [], top_k)
     if out_metrics is not None:
         out_metrics["context_count"] = len(results)
     if recorder is not None:

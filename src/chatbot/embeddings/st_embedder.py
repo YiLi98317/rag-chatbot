@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import List, Sequence, Optional
+from typing import List, Sequence
 
 import os
 import unicodedata
@@ -34,32 +34,53 @@ def _normalize_input(text: str) -> str:
     return s
 
 
+def _resolve_device() -> str:
+    import torch as _torch
+    if _torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
 @lru_cache(maxsize=2)
 def _get_model(model_name: str):
     # When EMBED_MODEL_LOCAL_PATH is set and exists, load from that path (offline; no Hub access).
     load_path = os.getenv("EMBED_MODEL_LOCAL_PATH", "").strip()
     if load_path and os.path.exists(load_path):
         from sentence_transformers import SentenceTransformer  # type: ignore
+        return SentenceTransformer(load_path, device=_resolve_device())
 
-        return SentenceTransformer(load_path)
-    # Lazy import so environments without these deps can still run in Ollama mode.
-    # Try to disable any remaining progress/logging in HF stack.
     try:
         from huggingface_hub.utils import disable_progress_bars  # type: ignore
-
         disable_progress_bars()
     except Exception:
         pass
     try:
         from transformers.utils import logging as hf_logging  # type: ignore
-
         hf_logging.set_verbosity_error()
     except Exception:
         pass
 
     from sentence_transformers import SentenceTransformer  # type: ignore
+    import torch as _torch
 
-    return SentenceTransformer(model_name)
+    device = _resolve_device()
+    model_kwargs = {"torch_dtype": _torch.float16}
+    tokenizer_kwargs = {}
+
+    if device == "cuda":
+        try:
+            from flash_attn import flash_attn_func  # noqa: F401
+            model_kwargs["attn_implementation"] = "flash_attention_2"
+        except ImportError:
+            pass
+        tokenizer_kwargs["padding_side"] = "left"
+
+    return SentenceTransformer(
+        model_name,
+        device=device,
+        model_kwargs=model_kwargs,
+        tokenizer_kwargs=tokenizer_kwargs,
+    )
 
 
 def embed_texts(
@@ -72,7 +93,6 @@ def embed_texts(
         return []
     m = _get_model(model_name)
     normed = [_normalize_input(t) for t in texts]
-    # sentence-transformers versions differ slightly; handle both.
     try:
         vecs = m.encode(
             normed,
@@ -87,9 +107,9 @@ def embed_texts(
             show_progress_bar=False,
         )
     try:
-        return vecs.tolist()  # type: ignore[return-value]
+        return vecs.tolist()
     except Exception:
-        return [list(map(float, v)) for v in vecs]  # type: ignore[arg-type]
+        return [list(map(float, v)) for v in vecs]
 
 
 def embed_text(text: str, *, model_name: str) -> List[float]:

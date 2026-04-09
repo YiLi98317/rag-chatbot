@@ -70,7 +70,7 @@ def answer_question(
 
     contexts = [r.get("text", "") for r in results]
     t_prompt_start = time.perf_counter()
-    prompt = build_prompt(question, contexts, debug=False)
+    prompt = build_prompt(question, contexts, debug=False, results=results)
     t_prompt_build_s = time.perf_counter() - t_prompt_start
 
     answer, usage_dict, t_llm_total_s, t_llm_first_token_s = generate_with_metrics(
@@ -185,7 +185,7 @@ def answer_question_stream(
 
     contexts = [r.get("text", "") for r in results]
     t_prompt_start = time.perf_counter()
-    prompt = build_prompt(question, contexts, debug=False)
+    prompt = build_prompt(question, contexts, debug=False, results=results)
     t_prompt_build_s = time.perf_counter() - t_prompt_start
 
     citations = []
