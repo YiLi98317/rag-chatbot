@@ -43,6 +43,13 @@ def build_expr(filters: Optional[FilterDict]) -> Optional[str]:
         elif include_empty:
             clauses.append("lang == ''")
 
+    raw_source_type = filters.get("source_type")
+    if isinstance(raw_source_type, list):
+        st = [t for t in raw_source_type if isinstance(t, str) and t.strip()]
+        if st:
+            items = ", ".join(_quote_str(t.strip()) for t in st)
+            clauses.append(f'metadata["source_type"] in [{items}]')
+
     if not clauses:
         return None
     return " and ".join(f"({c})" for c in clauses)
