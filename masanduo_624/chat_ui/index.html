@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>马三多 AI 商务</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/iconify-icon@1.0.8/dist/iconify-icon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #F5F7FA; }
+.chat-container { height: calc(100vh - 140px); }
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
+.message-enter { animation: fadeInUp 0.3s ease-out; }
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.prose-ai table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.prose-ai th { background: #EEF2FF; color: #4F6CF7; padding: 8px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #C7D2FE; }
+.prose-ai td { padding: 6px 12px; border-bottom: 1px solid #E2E8F0; }
+.prose-ai tr:hover td { background: #F8FAFC; }
+.prose-ai code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+.prose-ai strong { font-weight: 600; }
+.prose-ai h3, .prose-ai h4 { margin: 10px 0 4px; font-weight: 600; }
+.prose-ai ul { padding-left: 1.2rem; margin: 4px 0; }
+.prose-ai p { margin: 4px 0; }
+.typing-cursor::after { content: '▍'; animation: blink 1s infinite; color: #4F6CF7; }
+@keyframes blink { 0%,50% { opacity: 1; } 51%,100% { opacity: 0; } }
+/* Loading 思考动画 */
+.loading-hint { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.loading-dots { display: flex; gap: 4px; }
+.loading-dots span { width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; animation: dotPulse 1.4s infinite ease-in-out both; }
+.loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+.loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+.loading-dots span:nth-child(3) { animation-delay: 0s; }
+@keyframes dotPulse { 0%,80%,100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
+.loading-text { color: #64748b; font-size: 13px; }
+/* 评分弹窗 */
+.rating-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+.rating-modal { background: #fff; border-radius: 16px; width: 520px; max-width: 90vw; padding: 28px 32px 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.25); animation: modalIn 0.25s ease-out; }
+@keyframes modalIn { from { opacity: 0; transform: translateY(-20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.rating-modal h3 { font-size: 16px; font-weight: 600; margin: 0 0 6px; color: #1e293b; }
+.rating-modal .sub { font-size: 13px; color: #94a3b8; margin-bottom: 14px; }
+.rating-modal textarea { width: 100%; height: 140px; border: 2px solid #e2e8f0; border-radius: 10px; padding: 12px; font-size: 14px; resize: vertical; outline: none; box-sizing: border-box; }
+.rating-modal textarea:focus { border-color: #4F6CF7; }
+.rating-modal .btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+.rating-modal .btns button { padding: 8px 24px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; }
+.rating-modal .btn-cancel { background: #f1f5f9; color: #64748b; }
+.rating-modal .btn-cancel:hover { background: #e2e8f0; }
+.rating-modal .btn-submit { background: #4F6CF7; color: #fff; }
+.rating-modal .btn-submit:hover { background: #3b54d4; }
+</style>
+</head>
+<body class="text-slate-800 overflow-hidden">
+<div class="flex h-screen w-full">
+<main class="flex-1 flex flex-col bg-[#F5F7FA]">
+<header class="h-16 bg-white border-b border-slate-200 flex items-center px-6">
+<div>
+<h1 class="font-semibold text-slate-800">马三多</h1>
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+<span class="text-xs text-slate-400">手机妈妈 AI 商务</span>
+</div>
+</div>
+</header>
+
+<div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar" id="chat-flow">
+<div class="h-full flex flex-col items-center justify-center text-center p-10" id="welcome-screen">
+<div class="w-20 h-20 bg-[#4F6CF7]/10 rounded-3xl flex items-center justify-center mb-6">
+<iconify-icon icon="ph:sparkle-fill" class="text-4xl text-[#4F6CF7]"></iconify-icon>
+</div>
+<h2 class="text-2xl font-bold text-slate-800 mb-2">老板好！我是马三多</h2>
+<p class="text-slate-500 max-w-sm">手机妈妈AI商务，查回收价、算租机、问规则、聊生意，尽管说~</p>
+</div>
+</div>
+
+<div class="p-4 bg-gradient-to-t from-[#F5F7FA] to-transparent">
+<div class="max-w-3xl mx-auto">
+<div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-2 flex items-end gap-2">
+<textarea id="user-input" rows="1" placeholder="输入消息..." class="flex-1 bg-transparent border-none focus:ring-0 text-slate-700 resize-none py-3 px-3 max-h-32 custom-scrollbar" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+<button id="send-btn" onclick="sendMessage()" class="bg-[#4F6CF7] hover:bg-[#3D5BD9] text-white p-3 rounded-xl flex-shrink-0 transition-all">
+<iconify-icon icon="ph:paper-plane-right-fill" class="text-lg"></iconify-icon>
+</button>
+</div>
+<p class="text-center text-[10px] text-slate-400 mt-2">马三多 v6.23 · 会话: <span id="session-label" class="cursor-pointer hover:text-[#4F6CF7]" onclick="newSession()" title="点击新建会话"></span> · AI 可能会产生错误，请核实重要内容</p>
+</div>
+</div>
+</main>
+</div>
+
+<script>
+const API_BASE = window.location.origin;
+const API_CHAT = API_BASE + '/api/chat';
+
+// 会话管理
+let sessionId = localStorage.getItem('masanduo_session_id');
+if (!sessionId) {
+    sessionId = 'msd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('masanduo_session_id', sessionId);
+}
+let surname = localStorage.getItem('masanduo_surname') || '';
+let sending = false;
+let lastUserMsg = '';
+let lastAiMsg = '';
+
+// 首次访问：问老板姓什么
+if (!surname) {
+    setTimeout(() => {
+        const name = prompt('老板，您贵姓？我记一下，以后叫您X老板~');
+        if (name && name.trim()) {
+            surname = name.trim();
+            localStorage.setItem('masanduo_surname', surname);
+            updateSurnameLabel();
+        }
+    }, 500);
+}
+
+marked.setOptions({ breaks: true, gfm: true });
+
+function addMessage(role, content, time) {
+    const flow = document.getElementById('chat-flow');
+    const welcome = document.getElementById('welcome-screen');
+    if (welcome) welcome.remove();
+
+    const div = document.createElement('div');
+    div.className = 'flex ' + (role === 'user' ? 'justify-end' : 'justify-start') + ' message-enter';
+    div.innerHTML = `
+    <div class="flex gap-3 max-w-[85%] ${role === 'user' ? 'flex-row-reverse' : ''}">
+        <div class="flex-shrink-0">
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center ${role === 'user' ? 'bg-[#4F6CF7]' : 'bg-amber-100 border border-amber-300'}">
+                <iconify-icon icon="${role === 'user' ? 'ph:user-bold' : 'ph:horse-bold'}" class="${role === 'user' ? 'text-white' : 'text-amber-600'} text-lg"></iconify-icon>
+            </div>
+        </div>
+        <div class="space-y-1">
+            <div class="text-[11px] text-slate-400 px-1">${role === 'user' ? '老板' : '马三多'} · ${time}</div>
+            <div class="p-4 rounded-2xl shadow-sm ${role === 'user' ? 'bg-[#4F6CF7] text-white rounded-tr-none' : 'bg-white text-slate-700 rounded-tl-none border border-slate-100'}">
+                <div class="message-content prose-ai text-sm leading-relaxed">${content}</div>
+                ${role === 'ai' ? `<div class="mt-2 pt-2 border-t border-slate-100 flex gap-1.5 justify-end">
+<button onclick="rateMsg(this, 'A')" class="text-[10px] px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors">A 正确</button>
+<button onclick="rateMsg(this, 'B')" class="text-[10px] px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-orange-50 hover:border-orange-300 hover:text-orange-700 transition-colors">B 知识错</button>
+<button onclick="rateMsg(this, 'C')" class="text-[10px] px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition-colors">C AI错</button>
+<button onclick="rateMsg(this, 'D')" class="text-[10px] px-2 py-0.5 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors">D 满意</button>
+</div>` : ''}
+            </div>
+        </div>
+    </div>`;
+    flow.appendChild(div);
+    flow.scrollTop = flow.scrollHeight;
+    return div.querySelector('.prose-ai');
+}
+
+// 根据用户消息推测系统正在做什么，生成 loading 动画
+function getLoadingHint(msg) {
+    const m = (msg||'').toLowerCase();
+    let hint = '💭 思考中…';
+    if (/回收|卖多少|值多少|二手|靓机汇|回收价/.test(m)) hint = '🔍 正在查询靓机汇回收报价…';
+    else if (/租机|几折|几期|月供|费用|分期/.test(m)) hint = '🧮 正在计算租机费用方案…';
+    else if (/库存|有货|有什么/.test(m)) hint = '📦 正在查询门店库存…';
+    else if (/参数|配置|卖点|怎么/.test(m)) hint = '📱 正在查询手机参数…';
+    else if (/锁机|上锁|configurator/i.test(m)) hint = '🔒 正在查询锁机流程…';
+    else if (/出单|办单|下单|流程|规则|费率/.test(m)) hint = '📋 正在查询平台规则…';
+    else if (/门店|入驻|概况|经营|出路|引流|员工|抖音|美团/.test(m)) hint = '💡 正在整理经营建议…';
+    else if (/换|置换|抵|以旧换新/.test(m)) hint = '🔍 正在计算置换方案…';
+    return `<div class="loading-hint">
+  <div class="loading-dots"><span></span><span></span><span></span></div>
+  <div class="loading-text">${hint}</div>
+</div>`;
+}
+
+function typeText(el, fullText, speed) {
+    let i = 0;
+    const cursor = '<span class="typing-cursor"></span>';
+    el.innerHTML = cursor;
+    function step() {
+        if (i < fullText.length) {
+            i++;
+            el.innerHTML = fullText.substring(0, i) + cursor;
+            const flow = document.getElementById('chat-flow');
+            flow.scrollTop = flow.scrollHeight;
+            setTimeout(step, speed);
+        } else {
+            try {
+                el.innerHTML = marked.parse(fullText);
+            } catch(e) {
+                el.innerHTML = fullText.replace(/\n/g, '<br>');
+            }
+            document.getElementById('send-btn').disabled = false;
+            document.getElementById('user-input').focus();
+            sending = false;
+        }
+    }
+    step();
+}
+
+async function sendMessage() {
+    if (sending) return;
+    const input = document.getElementById('user-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+
+    const now = new Date();
+    const time = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0');
+
+    addMessage('user', msg, time);
+    input.value = '';
+    document.getElementById('send-btn').disabled = true;
+    sending = true;
+    lastUserMsg = msg;
+
+    // 加载状态：根据消息内容推断正在做什么
+    const loadingText = getLoadingHint(msg);
+    const div = addMessage('ai', loadingText, time);
+
+    try {
+        const resp = await fetch(API_CHAT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: msg, session_id: sessionId, surname: surname })
+        });
+        const data = await resp.json();
+        const reply = data.reply || '(空白回复)';
+        lastAiMsg = reply;
+        typeText(div, reply, 40);
+    } catch(e) {
+        div.innerHTML = '老板，出了点问题 ' + (e.message||e).toString().slice(0,60) + '。刷新试试～';
+        document.getElementById('send-btn').disabled = false;
+        sending = false;
+    }
+}
+
+function quickSend(text) {
+    document.getElementById('user-input').value = text;
+    sendMessage();
+}
+
+function newSession() {
+    if (!confirm('新建会话将清除当前聊天记录，确定吗？')) return;
+    sessionId = 'msd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('masanduo_session_id', sessionId);
+    const flow = document.getElementById('chat-flow');
+    flow.innerHTML = '<div class="h-full flex flex-col items-center justify-center text-center p-10" id="welcome-screen">\
+<div class="w-20 h-20 bg-[#4F6CF7]/10 rounded-3xl flex items-center justify-center mb-6">\
+<iconify-icon icon="ph:sparkle-fill" class="text-4xl text-[#4F6CF7]"></iconify-icon>\
+</div>\
+<h2 class="text-2xl font-bold text-slate-800 mb-2">老板好！我是马三多</h2>\
+<p class="text-slate-500 max-w-sm">手机妈妈AI商务，查回收价、算租机、问规则、聊生意，尽管说~</p>\
+</div>';
+    updateSessionLabel();
+}
+
+function updateSessionLabel() {
+    const el = document.getElementById('session-label');
+    if (el) el.textContent = sessionId.substr(4, 8);
+}
+
+function updateSurnameLabel() {
+    const el = document.getElementById('surname-label');
+    if (el) el.textContent = surname ? surname + '老板' : '老板';
+}
+updateSessionLabel();
+updateSurnameLabel();
+
+async function rateMsg(btn, rating) {
+    // B知识错 / C AI错 → 居中弹窗写正确答案
+    if (rating === 'B' || rating === 'C') {
+        showCorrectionModal(btn, rating);
+        return;
+    }
+    submitRating(btn, rating, '');
+}
+
+let pendingRating = { btn: null, rating: '' };
+
+function showCorrectionModal(btn, rating) {
+    pendingRating = { btn, rating };
+    document.getElementById('modal-overlay').classList.remove('hidden');
+    document.getElementById('modal-textarea').value = '';
+    document.getElementById('modal-textarea').focus();
+    document.getElementById('modal-textarea').onkeydown = function(e) {
+        if (e.key === 'Escape') { closeModal(); }
+        if (e.key === 'Enter' && e.ctrlKey) { confirmCorrection(); }
+    };
+    document.onkeydown = function(e) {
+        if (e.key === 'Escape') { closeModal(); }
+    };
+}
+
+function closeModal() {
+    document.getElementById('modal-overlay').classList.add('hidden');
+    document.onkeydown = null;
+    pendingRating = { btn: null, rating: '' };
+}
+
+function confirmCorrection() {
+    let correction = document.getElementById('modal-textarea').value.trim();
+    if (!correction) return;
+    if (correction.length > 500) correction = correction.substring(0, 500);
+    const { btn, rating } = pendingRating;
+    closeModal();
+    submitRating(btn, rating, correction);
+}
+
+async function submitRating(btn, rating, correction) {
+    const btns = btn.parentElement.querySelectorAll('button');
+    btns.forEach(b => { b.disabled = true; b.classList.add('opacity-50'); });
+    btn.classList.remove('opacity-50');
+    btn.classList.add('bg-' + (rating === 'A' ? 'emerald' : rating === 'B' ? 'orange' : rating === 'C' ? 'red' : 'blue') + '-100', 'border-' + (rating === 'A' ? 'emerald' : rating === 'B' ? 'orange' : rating === 'C' ? 'red' : 'blue') + '-400');
+    try {
+        await fetch(API_BASE + '/api/rating', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId, surname: surname, message: lastUserMsg, reply: lastAiMsg, rating: rating, correction: correction })
+        });
+    } catch(e) {}
+}
+</script>
+
+<!-- 评分弹窗 -->
+<div id="modal-overlay" class="rating-modal-overlay hidden" onclick="closeModal()">
+<div class="rating-modal" onclick="event.stopPropagation()">
+<h3>请写下正确答案</h3>
+<div class="sub">选「知识库错」或「AI错」时填写，方便后台核对（限 500 字）</div>
+<textarea id="modal-textarea" placeholder="在这里输入正确答案…"></textarea>
+<div class="btns">
+<button class="btn-cancel" onclick="closeModal()">取消</button>
+<button class="btn-submit" onclick="confirmCorrection()">确认提交</button>
+</div>
+</div>
+</div>
+
+</body>
+</html>

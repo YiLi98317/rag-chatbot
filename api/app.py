@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -14,12 +15,13 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from chatbot.masanduo import respond as masanduo_respond
 from chatbot.observability.logging import get_logger
-from chatbot.service.qa_service import answer_question, answer_question_stream
+from chatbot.service.qa_service import answer_question_stream
 from chatbot.settings import get_settings
 from chatbot.vectorstore import get_vector_store
 
-from api.models import PerformanceMetrics, QaRequest, QaResponse
+from api.models import QaRequest, QaResponse
 
 
 logger = get_logger("chatbot.api")
@@ -74,24 +76,13 @@ def readyz():
 
 @app.post("/v1/qa", response_model=QaResponse)
 def qa(req: QaRequest):
+    """马三多工作流入口：业务意图（回收价/算租机/复合/红线等）走 masanduo 引擎，
+    闲聊/未命中由引擎内部回落到现有 RAG。前端无需改动。"""
     s = get_settings()
-    debug_traces = bool(getattr(s, "debug_traces", False))
     try:
-        result = answer_question(
-            req.question,
-            top_k=req.top_k,
-            filters=req.filters,
-            session_id=req.session_id,
-            settings=s,
-            debug_traces=debug_traces,
-        )
-        return QaResponse(
-            answer=result.answer,
-            citations=result.citations,  # pydantic will coerce dict->Citation
-            trace_id=result.trace_id,
-            retrieval=result.retrieval if debug_traces else None,
-            performance_metrics=PerformanceMetrics(**result.performance_metrics) if result.performance_metrics else None,
-        )
+        session_id = req.session_id or f"api-{uuid.uuid4().hex[:8]}"
+        answer = masanduo_respond(req.question, session_id=session_id, settings=s)
+        return QaResponse(answer=answer, citations=[], trace_id=session_id)
     except Exception as e:
         logger.exception("qa_error")
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")

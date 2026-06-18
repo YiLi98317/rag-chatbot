@@ -4,3 +4,11 @@ line-length = 100
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+# 让编辑器静态分析（pyright/basedpyright/Pylance）认得 src/ 布局，
+# 消除 "无法解析导入 chatbot.*" 的误报（运行时 app.py 已自行把 src 加入 sys.path）。
+[tool.pyright]
+extraPaths = ["src"]
+
+[tool.basedpyright]
+extraPaths = ["src"]

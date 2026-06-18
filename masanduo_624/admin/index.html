@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>马三多 · 管理后台</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;color:#1a1a1a}
+.login-box{max-width:400px;margin:100px auto;background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+.login-box h1{text-align:center;margin-bottom:8px;font-size:24px}
+.login-box .sub{text-align:center;color:#999;margin-bottom:24px;font-size:13px}
+.login-box input{width:100%;padding:10px 12px;margin-bottom:12px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+.login-box button{width:100%;padding:12px;background:#e65c2b;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer}
+.login-box .err{color:#e65c2b;text-align:center;margin-top:8px;font-size:13px}
+
+.app{display:none;max-width:1200px;margin:0 auto;padding:20px}
+.app header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.app header h1{font-size:22px;color:#e65c2b}
+.app header .user{color:#999;font-size:13px}
+.tabs{display:flex;gap:8px;margin-bottom:20px}
+.tabs button{padding:10px 20px;border:1px solid #ddd;background:#fff;border-radius:8px;cursor:pointer;font-size:14px}
+.tabs button.active{background:#e65c2b;color:#fff;border-color:#e65c2b}
+
+.panel{background:#fff;border-radius:12px;padding:24px;box-shadow:0 1px 6px rgba(0,0,0,.06)}
+.toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.toolbar input,.toolbar select{padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px}
+.toolbar button{padding:8px 16px;background:#e65c2b;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px}
+.toolbar button.outline{background:#fff;color:#e65c2b;border:1px solid #e65c2b}
+.toolbar button.green{background:#22c55e}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:10px 8px;text-align:left;border-bottom:1px solid #f0f0f0}
+th{background:#fafafa;font-weight:600;color:#666}
+tr:hover{background:#fafafa}
+td input,td select{width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px}
+td button{padding:4px 10px;font-size:12px;border-radius:6px;cursor:pointer;border:none}
+td .del{background:#fee2e2;color:#dc2626}
+td .del:hover{background:#fca5a5}
+td .save{background:#dcfce7;color:#16a34a}
+td .save:hover{background:#86efac}
+.actions{display:flex;gap:6px}
+.empty{text-align:center;color:#999;padding:40px}
+.toast{position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;font-size:14px;z-index:999;opacity:0;transition:opacity .3s}
+.toast.show{opacity:1}
+.toast.ok{background:#22c55e}
+.toast.err{background:#dc2626}
+.json-editor{width:100%;min-height:400px;font-family:monospace;font-size:13px;padding:12px;border:1px solid #ddd;border-radius:8px;resize:vertical}
+</style>
+</head>
+<body>
+
+<div class="login-box" id="loginBox">
+  <h1>🔧 马三多后台</h1>
+  <p class="sub">手机妈妈 · 知识库管理</p>
+  <input id="loginUser" placeholder="账号" value="admin">
+  <input id="loginPass" type="password" placeholder="密码">
+  <button onclick="login()">登录</button>
+  <p class="err" id="loginErr"></p>
+</div>
+
+<div class="app" id="app">
+  <header>
+    <h1>🔧 马三多 · 管理后台</h1>
+    <span class="user">已登录 <button onclick="logout()" style="margin-left:8px;background:none;border:none;color:#e65c2b;cursor:pointer">退出</button></span>
+  </header>
+  <div class="tabs">
+    <button class="active" onclick="switchTab('inventory')">📦 库存管理</button>
+    <button onclick="switchTab('buyback')">💰 回收价</button>
+    <button onclick="switchTab('rules')">📋 平台规则</button>
+    <button onclick="switchTab('ratings')">📊 评分统计</button>
+  </div>
+  <div class="panel">
+    <!-- 库存面板 -->
+    <div id="panel-inventory">
+      <div class="toolbar">
+        <button onclick="addInventoryRow()">＋ 添加机型</button>
+        <button class="green" onclick="saveInventory()">💾 保存库存</button>
+        <span style="margin-left:auto;color:#999;font-size:12px">改完记得点保存</span>
+      </div>
+      <table id="inventoryTable">
+        <thead><tr><th>型号</th><th>颜色</th><th>成色</th><th>售价(元)</th><th>库存(台)</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <!-- 回收价面板 -->
+    <div id="panel-buyback" style="display:none">
+      <div class="toolbar">
+        <input id="buybackSearch" placeholder="搜索型号..." oninput="renderBuyback()">
+        <button class="outline" onclick="addBuybackRow()">＋ 添加回收价</button>
+        <button class="green" onclick="saveBuyback()">💾 保存回收价</button>
+        <span style="margin-left:auto;color:#999;font-size:12px">改完记得点保存</span>
+      </div>
+      <table id="buybackTable">
+        <thead><tr><th>型号</th><th>容量</th><th>靓机</th><th>小花</th><th>大花</th><th>外爆</th><th>内爆可测</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <!-- 规则面板 -->
+    <div id="panel-rules" style="display:none">
+      <div class="toolbar">
+        <button class="green" onclick="saveRules()">💾 保存规则</button>
+        <span style="margin-left:auto;color:#999;font-size:12px">JSON 格式，改完点保存</span>
+      </div>
+      <textarea id="rulesEditor" class="json-editor"></textarea>
+    </div>
+    <!-- 评分面板 -->
+    <div id="panel-ratings" style="display:none">
+      <div class="toolbar">
+        <button class="outline" onclick="loadRatings()">🔄 刷新</button>
+        <span id="ratingSummary" style="margin-left:auto;color:#999;font-size:12px"></span>
+      </div>
+      <table id="ratingsTable">
+        <thead><tr><th>时间</th><th>门店</th><th>用户消息</th><th>评分</th><th>错误原因</th><th>AI回复</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+let token = localStorage.getItem('msd_admin_token') || '';
+let activeTab = 'inventory';
+let buybackData = null;
+let inventoryData = [];
+let rulesData = null;
+
+// ====== 登录 ======
+function login() {
+  const u = document.getElementById('loginUser').value;
+  const p = document.getElementById('loginPass').value;
+  fetch('/api/admin/login', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username:u, password:p})
+  }).then(r => r.json()).then(d => {
+    if (d.code === 0) {
+      token = d.token;
+      localStorage.setItem('msd_admin_token', token);
+      showApp();
+    } else {
+      document.getElementById('loginErr').textContent = d.error;
+    }
+  });
+}
+function logout() { token=''; localStorage.removeItem('msd_admin_token'); location.reload(); }
+function api(path, data) {
+  const opts = { headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+token } };
+  if (data) { opts.method='POST'; opts.body=JSON.stringify(data); }
+  return fetch(path, opts).then(r => r.json());
+}
+
+// ====== Toast ======
+function toast(msg, type='ok') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast '+type+' show';
+  setTimeout(() => t.className='toast', 2000);
+}
+
+// ====== 初始化 ======
+if (token) {
+  // 验证 token
+  api('/api/admin/buyback').then(d => {
+    if (d.code === 401) { token=''; localStorage.removeItem('msd_admin_token'); }
+    else showApp();
+  });
+}
+
+function showApp() {
+  document.getElementById('loginBox').style.display='none';
+  document.getElementById('app').style.display='block';
+  loadAll();
+}
+
+function loadAll() { loadInventory(); loadBuyback(); loadRules(); }
+
+// ====== 库存 ======
+function loadInventory() {
+  api('/api/admin/inventory').then(d => {
+    if (d.code===401) { token=''; location.reload(); return; }
+    if (d.data && Array.isArray(d.data)) inventoryData = d.data;
+    renderInventoryTable();
+  });
+}
+function renderInventoryTable() {
+  const tbody = document.querySelector('#inventoryTable tbody');
+  if (!inventoryData.length) { tbody.innerHTML='<tr><td colspan="6" class="empty">暂无数据，请点"添加机型"</td></tr>'; return; }
+  tbody.innerHTML = inventoryData.map((r,i) => `
+    <tr>
+      <td><input value="${esc(r.model)}" onchange="inventoryData[${i}].model=this.value"></td>
+      <td><input value="${esc(r.color)}" onchange="inventoryData[${i}].color=this.value"></td>
+      <td><input value="${esc(r.condition)}" onchange="inventoryData[${i}].condition=this.value"></td>
+      <td><input type="number" value="${r.price}" onchange="inventoryData[${i}].price=parseInt(this.value)||0"></td>
+      <td><input type="number" value="${r.stock}" onchange="inventoryData[${i}].stock=parseInt(this.value)||0"></td>
+      <td><button class="del" onclick="inventoryData.splice(${i},1);renderInventoryTable()">删除</button></td>
+    </tr>`).join('');
+}
+
+function addInventoryRow() {
+  inventoryData.push({model:'iPhone 16', color:'黑色', condition:'99新', price:5999, stock:1});
+  renderInventoryTable();
+}
+function saveInventory() {
+  api('/api/admin/inventory', {data: inventoryData}).then(d => {
+    if (d.code===0) {
+      toast('库存保存成功');
+      api('/api/admin/reload');
+    } else toast(d.error||'失败', 'err');
+  });
+}
+
+// ====== 回收价 ======
+function loadBuyback() {
+  api('/api/admin/buyback').then(d => {
+    if (d.code===401) return;
+    buybackData = d;
+    renderBuyback();
+  });
+}
+function renderBuyback() {
+  if (!buybackData || !buybackData.prices) return;
+  const q = (document.getElementById('buybackSearch')?.value||'').toLowerCase();
+  const tbody = document.querySelector('#buybackTable tbody');
+  tbody.innerHTML = buybackData.prices.filter(p => !q || p.model.toLowerCase().includes(q) || p.capacity.includes(q))
+    .map((p,i) => {
+      const idx = buybackData.prices.indexOf(p);
+      return `<tr>
+        <td><input value="${esc(p.model)}" onchange="buybackData.prices[${idx}].model=this.value"></td>
+        <td><input value="${esc(p.capacity)}" onchange="buybackData.prices[${idx}].capacity=this.value"></td>
+        <td><input type="number" value="${p['靓机']||''}" onchange="buybackData.prices[${idx}]['靓机']=parseInt(this.value)||0"></td>
+        <td><input type="number" value="${p['小花']||''}" onchange="buybackData.prices[${idx}]['小花']=parseInt(this.value)||0"></td>
+        <td><input type="number" value="${p['大花']||''}" onchange="buybackData.prices[${idx}]['大花']=parseInt(this.value)||0"></td>
+        <td><input type="number" value="${p['外爆']||''}" onchange="buybackData.prices[${idx}]['外爆']=parseInt(this.value)||0"></td>
+        <td><input type="number" value="${p['内爆可测']||''}" onchange="buybackData.prices[${idx}]['内爆可测']=parseInt(this.value)||0"></td>
+        <td><button class="del" onclick="buybackData.prices.splice(${idx},1);renderBuyback()">删除</button></td>
+      </tr>`;
+    }).join('');
+}
+function addBuybackRow() {
+  buybackData.prices.push({model:'16 Pro Max', capacity:'256G', network:'A3297', '靓机':0, '小花':0, '大花':0, '外爆':0, '内爆可测':0});
+  renderBuyback();
+}
+function saveBuyback() {
+  api('/api/admin/buyback', {data: buybackData}).then(d => {
+    if (d.code===0) {
+      toast('回收价保存成功');
+      api('/api/admin/reload');
+    } else toast(d.error||'失败', 'err');
+  });
+}
+
+// ====== 规则 ======
+function loadRules() {
+  api('/api/admin/rules').then(d => {
+    if (d.code===401) return;
+    rulesData = d;
+    document.getElementById('rulesEditor').value = JSON.stringify(d, null, 2);
+  });
+}
+function saveRules() {
+  try {
+    const data = JSON.parse(document.getElementById('rulesEditor').value);
+    api('/api/admin/rules', {data}).then(d => {
+      if (d.code===0) toast('规则保存成功');
+      else toast(d.error||'失败', 'err');
+    });
+  } catch(e) { toast('JSON 格式错误', 'err'); }
+}
+
+// ====== 评分 ======
+let ratingsData = [];
+function loadRatings() {
+  api('/api/admin/ratings').then(d => {
+    if (d.code===401) return;
+    ratingsData = (d.ratings||[]).reverse();
+    renderRatings();
+  });
+}
+function renderRatings() {
+  const tbody = document.querySelector('#ratingsTable tbody');
+  if (!ratingsData.length) { tbody.innerHTML='<tr><td colspan="6" class="empty">暂无评分数据，门店测试后会出现在这里</td></tr>'; document.getElementById('ratingSummary').textContent=''; return; }
+  // 统计
+  const count = {};
+  ratingsData.forEach(r => { count[r.rating] = (count[r.rating]||0)+1; });
+  document.getElementById('ratingSummary').textContent = `总计 ${ratingsData.length} 条 | A正确:${count['A']||0} B知识错:${count['B']||0} C AI错:${count['C']||0} D满意:${count['D']||0}`;
+  tbody.innerHTML = ratingsData.slice(0, 200).map(r => `
+    <tr>
+      <td>${esc(r.time||'')}</td>
+      <td>${esc(r.surname||'')}(${esc((r.session_id||'').slice(0,8))})</td>
+      <td title="${esc(r.message||'')}">${esc((r.message||'').slice(0,40))}</td>
+      <td><strong>${esc(r.rating)}</strong></td>
+      <td title="${esc(r.correction||'')}" style="color:#dc2626;max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc((r.correction||'无').slice(0,40))}</td>
+      <td title="${esc(r.reply||'')}">${esc((r.reply||'').slice(0,50))}</td>
+    </tr>`).join('');
+}
+
+// ====== 辅助 ======
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+  const labels = {inventory:'库存', buyback:'回收', rules:'规则', ratings:'评分'};
+  document.querySelectorAll('.tabs button').forEach(b => { if (b.textContent.includes(labels[tab]||'')) b.classList.add('active'); });
+  ['inventory','buyback','rules','ratings'].forEach(t => document.getElementById('panel-'+t).style.display = t===tab?'block':'none');
+  if (tab==='buyback') loadBuyback();
+  if (tab==='rules') loadRules();
+  if (tab==='inventory') loadInventory();
+  if (tab==='ratings') loadRatings();
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// 回车登录
+document.getElementById('loginPass').addEventListener('keydown', e => { if (e.key==='Enter') login(); });
+</script>
+</body>
+</html>
