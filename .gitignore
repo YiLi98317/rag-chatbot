@@ -4,8 +4,8 @@
 !.env.example
 
 # Local data (do not commit)
-data/
-/data/
+data/big
+/data/big
 
 # Virtual environments
 .venv/

@@ -21,4 +21,5 @@ cryptography
 openpyxl
 pandas
 xlrd
+langfuse>=3,<4
 

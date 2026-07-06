@@ -10,6 +10,10 @@ class QaRequest(BaseModel):
     top_k: Optional[int] = Field(default=None, ge=1, le=50)
     filters: Optional[Dict[str, Any]] = None
     session_id: Optional[str] = None
+    # 观测归因（可选，仅用于 Langfuse，不影响回答）
+    role: Optional[str] = None
+    store_id: Optional[str] = None
+    user_id: Optional[str] = None
 
 
 class Citation(BaseModel):
@@ -46,4 +50,20 @@ class QaResponse(BaseModel):
     trace_id: str
     retrieval: Optional[Dict[str, Any]] = None
     performance_metrics: Optional[PerformanceMetrics] = None
+    # 结构化契约（可选，前端旧解析只用 answer，不受影响）
+    sources: Optional[List[str]] = None
+    confidence: Optional[str] = None
+    need_human: Optional[bool] = None
+
+
+class FeedbackRequest(BaseModel):
+    trace_id: str = Field(..., min_length=1)
+    value: int = Field(..., ge=0, le=1)  # 1=👍 0=👎
+    reason: Optional[str] = None
+    comment: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class FeedbackResponse(BaseModel):
+    ok: bool
 

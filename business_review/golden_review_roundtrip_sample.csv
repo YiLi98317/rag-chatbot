@@ -1,0 +1,6 @@
+﻿id,category,role,question,expected_answer_points,required_sources,forbidden_terms,must_handoff,ideal_reply,needs_business_review,business_status,business_comment,reviewer,owner,reviewed_at,revised_question,revised_expected_answer_points,revised_required_sources,revised_forbidden_terms,revised_must_handoff,revised_ideal_reply
+fee_001,,,,,,,,,,confirmed,答案没问题,张三,运营,2026-07-03,,,,,,
+fee_002,,,,,,,,,,revise,补充设备管理费,李四,财务,2026-07-03,,,,,,老板，这是修订后的理想回答：订单总价=售价+服务费+50元设备管理费，具体以系统为准。
+chat_004,,,,,,,,,,delete,和业务无关删掉,张三,,2026-07-03,,,,,,
+audit_005,,,,,,,,,,pending,通过率口径待风控确认,王五,,2026-07-03,,,,,,
+rt_add_001,服务费/费用解释,店员,会员服务费能不能退？,,,,,,,add,,赵六,客服主管,2026-07-03,,以平台规则为准；不要承诺一定可退,,,,老板，会员服务费能不能退以平台规则为准，别打包票，让客户在小程序或联系客服确认。

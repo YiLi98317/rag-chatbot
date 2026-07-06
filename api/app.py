@@ -15,13 +15,13 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from chatbot.masanduo import respond as masanduo_respond
+from chatbot.masanduo import respond_full as masanduo_respond_full
 from chatbot.observability.logging import get_logger
 from chatbot.service.qa_service import answer_question_stream
 from chatbot.settings import get_settings
 from chatbot.vectorstore import get_vector_store
 
-from api.models import QaRequest, QaResponse
+from api.models import FeedbackRequest, FeedbackResponse, QaRequest, QaResponse
 
 
 logger = get_logger("chatbot.api")
@@ -81,11 +81,44 @@ def qa(req: QaRequest):
     s = get_settings()
     try:
         session_id = req.session_id or f"api-{uuid.uuid4().hex[:8]}"
-        answer = masanduo_respond(req.question, session_id=session_id, settings=s)
-        return QaResponse(answer=answer, citations=[], trace_id=session_id)
+        out = masanduo_respond_full(
+            req.question,
+            session_id=session_id,
+            role=req.role or "",
+            store_id=req.store_id or "",
+            user_id=req.user_id or "",
+            settings=s,
+        )
+        # trace_id 优先用 Langfuse 真实 trace（供前端反馈挂分）；未启用时回落 session_id
+        return QaResponse(
+            answer=out.answer,
+            citations=[],
+            trace_id=out.trace_id or session_id,
+            sources=out.sources or None,
+            confidence=out.confidence,
+            need_human=out.need_human,
+        )
     except Exception as e:
         logger.exception("qa_error")
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
+@app.post("/v1/feedback", response_model=FeedbackResponse)
+def feedback(req: FeedbackRequest):
+    """接收前端用户反馈（👍/👎 + 原因），写入 Langfuse score。故障安全：失败返回 ok=false。"""
+    try:
+        from chatbot.observability.langfuse_tracing import log_feedback
+
+        ok = log_feedback(
+            trace_id=req.trace_id,
+            value=float(req.value),
+            reason=req.reason or "",
+            comment=req.comment or "",
+        )
+        return FeedbackResponse(ok=bool(ok))
+    except Exception:
+        logger.exception("feedback_error")
+        return FeedbackResponse(ok=False)
 
 
 def _sse_stream_qa(req: QaRequest):

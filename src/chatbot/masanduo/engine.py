@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 from chatbot.masanduo import compute as compute_mod
 from chatbot.masanduo import ecommerce as ecommerce_mod
@@ -22,21 +23,55 @@ from chatbot.settings import Settings, get_settings
 logger = get_logger("chatbot.masanduo")
 
 
+@dataclass
+class QaOutput:
+    """结构化回答契约。answer 保持与旧版一致；其余为附加观测/前端字段。"""
+    answer: str
+    sources: List[str] = field(default_factory=list)
+    confidence: str = "high"          # high | medium | low
+    need_human: bool = False
+    trace_id: Optional[str] = None
+    intent: str = ""
+    path: str = ""
+
+
+_EMPTY_MSG = "老板，您说点啥我好帮您干活～"
+
+
 def respond(
     message: str,
     *,
     session_id: str = "default",
     surname: str = "",
+    role: str = "",
+    store_id: str = "",
+    user_id: str = "",
     settings: Optional[Settings] = None,
 ) -> str:
-    """处理一条消息，返回马三多话术。
+    """向后兼容入口：返回话术字符串（内部调用 respond_full）。"""
+    return respond_full(
+        message, session_id=session_id, surname=surname, role=role,
+        store_id=store_id, user_id=user_id, settings=settings,
+    ).answer
 
-    单出口集中记日志：每条请求记录命中路径(path)、耗时、问句与回答预览，
-    便于事后用 journalctl 排查（命中了哪个意图、是否回落 RAG、是否报错）。
+
+def respond_full(
+    message: str,
+    *,
+    session_id: str = "default",
+    surname: str = "",
+    role: str = "",
+    store_id: str = "",
+    user_id: str = "",
+    settings: Optional[Settings] = None,
+) -> QaOutput:
+    """处理一条消息，返回结构化 QaOutput（answer + sources/confidence/need_human/trace_id）。
+
+    单出口集中记日志 + Langfuse 打点。role/store_id/user_id 仅用于观测归因，不影响回答。
     """
     msg = (message or "").strip()
     if not msg:
-        return "老板，您说点啥我好帮您干活～"
+        return QaOutput(answer=_EMPTY_MSG, confidence="high", need_human=False)
 
     s = settings or get_settings()
     t0 = time.perf_counter()
@@ -52,6 +87,7 @@ def respond(
         update_state(session_id, old_device=f"{state['old_device']} {cap.group(1)}G")
 
     path = intent  # 实际走的路径标签，便于排查
+    sources: list = []  # RAG 回落时命中的知识库来源（仅用于观测）
     try:
         # 红线 / 人工 / 已下线功能 / 电商素材：固定文案或纯文本，不进 LLM
         if intent == "套机风险":
@@ -80,7 +116,7 @@ def respond(
                 reply = polish_chat(msg, session_id=session_id, surname=surname, settings=s)
                 path = "chat:smalltalk"
             else:
-                reply = _rag_fallback(msg, session_id, surname, s)
+                reply = _rag_fallback(msg, session_id, surname, s, sources_out=sources)
                 path = "chat:rag"
             update_state(session_id, last_intent="chat")
         else:
@@ -95,7 +131,7 @@ def respond(
             else:
                 real_intent = result.get("intent", intent)
                 if real_intent == "chat":
-                    reply = _rag_fallback(msg, session_id, surname, s)
+                    reply = _rag_fallback(msg, session_id, surname, s, sources_out=sources)
                     path = "chat:rag(compute)"
                 else:
                     reply = polish(
@@ -115,7 +151,63 @@ def respond(
         "masanduo_qa session=%s path=%s ms=%.0f q=%r a=%r",
         session_id, path, dt_ms, msg[:60], (reply or "")[:80],
     )
-    return reply
+    confidence, need_human = _confidence_and_handoff(intent, path, sources)
+    trace_id = _trace_qa(
+        session_id, msg, reply, intent, path, model, dt_ms,
+        sources=sources, role=role, store_id=store_id, user_id=user_id,
+    )
+    return QaOutput(
+        answer=reply, sources=list(sources), confidence=confidence,
+        need_human=need_human, trace_id=trace_id, intent=intent, path=path,
+    )
+
+
+def _confidence_and_handoff(intent: str, path: str, sources: list) -> tuple[str, bool]:
+    """由命中路径/来源派生 confidence 与 need_human（简单可解释规则）。"""
+    if path.endswith(":error"):
+        return "low", True
+    if intent == "human_agent":
+        return "high", True
+    if path.startswith("chat:rag"):
+        return ("medium", False) if sources else ("low", True)
+    # 红线固定文案 / 业务确定性计算 / 闲聊澄清：视为高置信
+    return "high", False
+
+
+def _trace_qa(
+    session_id: str,
+    msg: str,
+    reply: str,
+    intent: str,
+    path: str,
+    model: str,
+    dt_ms: float,
+    *,
+    sources: Optional[list] = None,
+    role: str = "",
+    store_id: str = "",
+    user_id: str = "",
+) -> Optional[str]:
+    """把本轮问答上报 Langfuse，返回 trace_id。故障安全：任何异常都不影响正常返回。"""
+    try:
+        from chatbot.observability.langfuse_tracing import log_qa
+
+        return log_qa(
+            session_id=session_id,
+            question=msg,
+            answer=reply or "",
+            intent=intent,
+            path=path,
+            model=model,
+            latency_ms=dt_ms,
+            sources=sources or None,
+            role=role,
+            store_id=store_id,
+            user_id=user_id,
+        )
+    except Exception:
+        logger.debug("trace_qa failed", exc_info=True)
+        return None
 
 
 def _maybe_clarify(msg: str, model: str, last_intent: str) -> str:
@@ -129,17 +221,31 @@ def _maybe_clarify(msg: str, model: str, last_intent: str) -> str:
     return ""
 
 
-def _rag_fallback(msg: str, session_id: str, surname: str, settings: Settings) -> str:
+def _rag_fallback(
+    msg: str,
+    session_id: str,
+    surname: str,
+    settings: Settings,
+    sources_out: Optional[list] = None,
+) -> str:
     """未命中业务意图时：用 RAG 只做检索，再统一用马三多 SOUL 口吻润色。
 
     这样既保留知识库依据，又不会出现 RAG 自带 phone_mom 人设导致的语气割裂。
     检索失败则降级为纯闲聊（仍是 SOUL 口吻）。
+    sources_out 若提供，则填入本次命中的知识库来源名（仅用于观测）。
     """
-    contexts: list = []
+    results: list = []
     try:
-        contexts = _retrieve_contexts(msg, settings)
+        results = _retrieve_results(msg, settings)
     except Exception:
-        contexts = []
+        results = []
+    if sources_out is not None:
+        for r in results:
+            meta = r.get("metadata", {}) or {}
+            name = meta.get("source") or meta.get("title") or meta.get("Name")
+            if name and str(name) not in sources_out:
+                sources_out.append(str(name))
+    contexts = [r.get("text", "") for r in results]
     try:
         return polish_with_context(
             msg, contexts, session_id=session_id, surname=surname, settings=settings
@@ -148,8 +254,8 @@ def _rag_fallback(msg: str, session_id: str, surname: str, settings: Settings) -
         return polish_chat(msg, session_id=session_id, surname=surname, settings=settings)
 
 
-def _retrieve_contexts(msg: str, settings: Settings) -> list:
-    """复用现有 RAG 的检索层（只取上下文，不用它的 prompt/人设）。"""
+def _retrieve_results(msg: str, settings: Settings) -> list:
+    """复用现有 RAG 的检索层（返回带 metadata 的原始结果，供取上下文与来源）。"""
     from chatbot.retrieval.retriever import retrieve_top_k
     from chatbot.vectorstore import get_vector_store
 
@@ -164,4 +270,4 @@ def _retrieve_contexts(msg: str, settings: Settings) -> list:
         top_k=k,
         db_uri=settings.db_uri,
     )
-    return [r.get("text", "") for r in results]
+    return results
